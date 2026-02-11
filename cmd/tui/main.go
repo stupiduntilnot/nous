@@ -206,6 +206,27 @@ func renderResult(payload map[string]any) {
 			fmt.Printf("tool: %s %v\n", tp, ev)
 		case "agent_start", "agent_end", "turn_start", "turn_end":
 			fmt.Printf("status: %s\n", tp)
+		case "status":
+			if msg, ok := ev["message"].(string); ok && msg != "" {
+				fmt.Printf("status: %s\n", msg)
+			}
+		case "warning":
+			code, _ := ev["code"].(string)
+			msg, _ := ev["message"].(string)
+			if code != "" || msg != "" {
+				fmt.Printf("warning: %s %s\n", code, msg)
+			}
+		case "error":
+			code, _ := ev["code"].(string)
+			msg, _ := ev["message"].(string)
+			cause, _ := ev["cause"].(string)
+			if cause != "" {
+				fmt.Printf("error: %s %s cause=%s\n", code, msg, cause)
+				break
+			}
+			if code != "" || msg != "" {
+				fmt.Printf("error: %s %s\n", code, msg)
+			}
 		}
 	}
 }

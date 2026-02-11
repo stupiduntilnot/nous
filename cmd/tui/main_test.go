@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -88,5 +92,42 @@ func TestParseInputSetActiveToolsClear(t *testing.T) {
 	}
 	if len(tools) != 0 {
 		t.Fatalf("expected empty tool list, got: %+v", tools)
+	}
+}
+
+func TestRenderResultRendersStatusWarningErrorEvents(t *testing.T) {
+	payload := map[string]any{
+		"output": "ok",
+		"events": []any{
+			map[string]any{"type": "status", "message": "await_next: continue_with_tool_results"},
+			map[string]any{"type": "warning", "code": "tool_not_found", "message": "tool_not_found: missing.tool"},
+			map[string]any{"type": "error", "code": "provider_error", "message": "provider stream returned error", "cause": "upstream_down"},
+		},
+	}
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	os.Stdout = w
+	renderResult(payload)
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout failed: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"assistant: ok",
+		"status: await_next: continue_with_tool_results",
+		"warning: tool_not_found tool_not_found: missing.tool",
+		"error: provider_error provider stream returned error cause=upstream_down",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("render output missing %q in:\n%s", want, out)
+		}
 	}
 }
