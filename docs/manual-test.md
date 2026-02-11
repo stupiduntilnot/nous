@@ -80,8 +80,10 @@ go run ./cmd/tui /tmp/pi-core.sock
 
 ## 7. Automated Regression (recommended before release)
 
+- [ ] `make phase-gate` passes
 - [ ] `make ci` passes
 
 ```bash
+make phase-gate
 make ci
 ```
