@@ -18,10 +18,11 @@ func main() {
 	if len(os.Args) > 1 {
 		socket = os.Args[1]
 	}
+	activeSession := ""
 
 	fmt.Println("oh-my-agent tui mvp")
 	fmt.Printf("socket: %s\n", socket)
-	printStatus(socket)
+	printStatus(socket, activeSession)
 	printHelp()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -50,7 +51,7 @@ func main() {
 				continue
 			}
 			if line == "status" {
-				printStatus(socket)
+				printStatus(socket, activeSession)
 				continue
 			}
 			fmt.Printf("unknown command: %s\n", line)
@@ -67,11 +68,20 @@ func main() {
 			continue
 		}
 		if resp.OK {
+			if sid := extractSessionID(resp.Payload); sid != "" {
+				activeSession = sid
+			}
 			if resp.Type == "result" {
 				renderResult(resp.Payload)
+				if activeSession != "" {
+					fmt.Printf("session: %s\n", activeSession)
+				}
 				continue
 			}
 			fmt.Printf("ok: type=%s payload=%v\n", resp.Type, resp.Payload)
+			if activeSession != "" && (resp.Type == "session" || resp.Type == "result") {
+				fmt.Printf("session: %s\n", activeSession)
+			}
 			continue
 		}
 		if resp.Error != nil {
@@ -231,12 +241,17 @@ func renderResult(payload map[string]any) {
 	}
 }
 
-func printStatus(socket string) {
+func printStatus(socket, activeSession string) {
 	if checkConnected(socket) {
 		fmt.Println("status: connected")
+	} else {
+		fmt.Println("status: disconnected")
+	}
+	if activeSession == "" {
+		fmt.Println("session: (none)")
 		return
 	}
-	fmt.Println("status: disconnected")
+	fmt.Printf("session: %s\n", activeSession)
 }
 
 func checkConnected(socket string) bool {
@@ -246,4 +261,12 @@ func checkConnected(socket string) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+func extractSessionID(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	sid, _ := payload["session_id"].(string)
+	return sid
 }

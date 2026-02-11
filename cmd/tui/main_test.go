@@ -144,3 +144,15 @@ func TestParseInputBranchUsesSessionID(t *testing.T) {
 		t.Fatalf("branch payload should not contain parent_id: %+v", payload)
 	}
 }
+
+func TestExtractSessionID(t *testing.T) {
+	if got := extractSessionID(nil); got != "" {
+		t.Fatalf("expected empty id from nil payload, got: %q", got)
+	}
+	if got := extractSessionID(map[string]any{"x": "1"}); got != "" {
+		t.Fatalf("expected empty id from payload without session_id, got: %q", got)
+	}
+	if got := extractSessionID(map[string]any{"session_id": "sess-123"}); got != "sess-123" {
+		t.Fatalf("unexpected session id: %q", got)
+	}
+}
