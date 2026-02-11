@@ -34,6 +34,15 @@ func NewServer(socketPath string) *Server {
 	return &Server{socketPath: socketPath, timeout: 3 * time.Second}
 }
 
+func (s *Server) SetEngine(engine *core.Engine, loop *core.CommandLoop) {
+	s.engine = engine
+	s.loop = loop
+}
+
+func (s *Server) SetSessionManager(mgr *session.Manager) {
+	s.sessions = mgr
+}
+
 func (s *Server) Serve(ctx context.Context) error {
 	if err := ensureSocketDir(s.socketPath); err != nil {
 		return err
