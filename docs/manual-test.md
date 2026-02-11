@@ -55,9 +55,11 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock ext hello
 ## 5. Tool Controls
 
 - [ ] `set_active_tools` with unknown tool returns `command_rejected`
+- [ ] `set_active_tools` without args clears active tool set
 
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools unknown_tool
+go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools
 ```
 
 ## 6. TUI Flow
