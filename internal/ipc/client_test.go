@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,46 @@ func (b *blockingExecutor) Prompt(ctx context.Context, _ string, _ string) (stri
 	case <-b.release:
 		return "ok", nil
 	}
+}
+
+type orderedExecutor struct {
+	started chan string
+	release chan struct{}
+
+	mu    sync.Mutex
+	calls []string
+}
+
+func newOrderedExecutor() *orderedExecutor {
+	return &orderedExecutor{
+		started: make(chan string, 32),
+		release: make(chan struct{}, 32),
+	}
+}
+
+func (o *orderedExecutor) Prompt(ctx context.Context, _ string, prompt string) (string, error) {
+	o.mu.Lock()
+	o.calls = append(o.calls, prompt)
+	o.mu.Unlock()
+
+	select {
+	case o.started <- prompt:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-o.release:
+		return "ok:" + prompt, nil
+	}
+}
+
+func (o *orderedExecutor) Calls() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]string, len(o.calls))
+	copy(out, o.calls)
+	return out
 }
 
 type echoPromptAdapter struct{}
@@ -533,6 +574,79 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	if err := <-errCh; err != nil {
 		t.Fatalf("server returned error: %v", err)
 	}
+}
+
+func TestSteerPreemptsFollowUpOverIPC(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	exec := newOrderedExecutor()
+	srv.loop = core.NewCommandLoop(exec)
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "p0",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0"},
+	}); err != nil {
+		t.Fatalf("prompt command failed: %v", err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(time.Second):
+		t.Fatalf("first prompt did not start")
+	}
+
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "f1",
+		Type:    string(protocol.CmdFollowUp),
+		Payload: map[string]any{"text": "f1"},
+	}); err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "s1",
+		Type:    string(protocol.CmdSteer),
+		Payload: map[string]any{"text": "s1"},
+	}); err != nil {
+		t.Fatalf("steer failed: %v", err)
+	}
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "f2",
+		Type:    string(protocol.CmdFollowUp),
+		Payload: map[string]any{"text": "f2"},
+	}); err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+
+	for range 8 {
+		exec.release <- struct{}{}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		calls := exec.Calls()
+		if len(calls) >= 4 {
+			if calls[0] != "p0" || calls[1] != "s1" || calls[2] != "f1" || calls[3] != "f2" {
+				t.Fatalf("unexpected execution order: %v", calls)
+			}
+			cancel()
+			if err := <-errCh; err != nil {
+				t.Fatalf("server returned error: %v", err)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting execution order, calls=%v", exec.Calls())
 }
 
 func TestPromptValidationErrorHasRequestID(t *testing.T) {
