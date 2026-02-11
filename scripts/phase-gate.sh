@@ -27,6 +27,7 @@ echo "[gate] verify protocol docs/artifacts"
 require_file docs/req.md
 require_file docs/dev.md
 require_file .gitignore
+require_file Makefile
 require_file docs/protocol/openapi-like.json
 require_file docs/protocol/pi-mono-semantic-matrix.md
 require_file docs/protocol/examples/commands.ndjson
@@ -43,6 +44,8 @@ require_file scripts/smoke.sh
 require_file scripts/pingpong.sh
 rg -q 'UDS \+ NDJSON' docs/req.md docs/dev.md
 rg -q '^artifacts/\*\.log$' .gitignore
+rg -q '^e2e-tui-evidence:' Makefile
+rg -q 'scripts/tui-evidence\.sh' Makefile
 
 echo "[gate] verify critical test inventory"
 require_test ./internal/core TestStateTransitions
