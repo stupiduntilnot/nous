@@ -1,0 +1,77 @@
+# Manual Test Checklist
+
+## 0. Environment
+
+- [ ] `ollama list` includes `qwen2.5-coder:7b`
+- [ ] Core starts on `/tmp/pi-core.sock` with local model config
+
+```bash
+OPENAI_API_KEY=dummy go run ./cmd/core \
+  --socket /tmp/pi-core.sock \
+  --provider openai \
+  --model qwen2.5-coder:7b \
+  --api-base http://127.0.0.1:11434
+```
+
+## 1. Basic IPC
+
+- [ ] `corectl ping` returns `pong`
+
+```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock ping
+```
+
+## 2. Prompt Flow
+
+- [ ] synchronous prompt returns `output/events/session_id`
+- [ ] async prompt returns accepted payload (`{"command":"prompt"}`)
+
+```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock prompt "say hello"
+go run ./cmd/corectl --socket /tmp/pi-core.sock prompt_async "say hello"
+```
+
+## 3. Session Flow
+
+- [ ] `new` returns session id
+- [ ] `switch` can switch to existing session
+- [ ] `branch` returns new session id and parent id
+
+```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock new
+go run ./cmd/corectl --socket /tmp/pi-core.sock switch <session_id>
+go run ./cmd/corectl --socket /tmp/pi-core.sock branch <parent_session_id>
+```
+
+## 4. Extension Command Path
+
+- [ ] `ext` on missing command returns `command_rejected`
+
+```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock ext hello
+```
+
+## 5. Tool Controls
+
+- [ ] `set_active_tools` with unknown tool returns `command_rejected`
+
+```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools unknown_tool
+```
+
+## 6. TUI Flow
+
+- [ ] TUI connects and shows `status: connected`
+- [ ] TUI command parsing works for `prompt/new/switch/branch/ext`
+
+```bash
+go run ./cmd/tui /tmp/pi-core.sock
+```
+
+## 7. Automated Regression (recommended before release)
+
+- [ ] `make ci` passes
+
+```bash
+make ci
+```
