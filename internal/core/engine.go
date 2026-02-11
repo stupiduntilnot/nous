@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"oh-my-agent/internal/extension"
 	"oh-my-agent/internal/provider"
 )
 
@@ -14,6 +15,7 @@ type Engine struct {
 	provider provider.Adapter
 	tools    map[string]Tool
 	active   map[string]struct{}
+	ext      *extension.Manager
 }
 
 func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
@@ -23,6 +25,10 @@ func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
 		tools:    map[string]Tool{},
 		active:   map[string]struct{}{},
 	}
+}
+
+func (e *Engine) SetExtensionManager(m *extension.Manager) {
+	e.ext = m
 }
 
 func (e *Engine) SetTools(tools []Tool) {
@@ -56,6 +62,17 @@ func (e *Engine) activeToolNames() []string {
 }
 
 func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, error) {
+	if e.ext != nil {
+		out, err := e.ext.RunInputHooks(prompt)
+		if err != nil {
+			return "", err
+		}
+		prompt = out.Text
+		if out.Handled {
+			return prompt, nil
+		}
+	}
+
 	if err := e.runtime.StartRun(runID); err != nil {
 		return "", err
 	}
@@ -64,7 +81,12 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	if err := e.runtime.StartTurn(); err != nil {
 		return "", err
 	}
-	defer func() { _ = e.runtime.EndTurn() }()
+	defer func() {
+		_ = e.runtime.EndTurn()
+		if e.ext != nil {
+			_ = e.ext.RunTurnEndHooks(runID, e.runtime.TurnNumber())
+		}
+	}()
 
 	userID := fmt.Sprintf("user-%d", time.Now().UnixNano())
 	if err := e.runtime.MessageStart(userID, "user"); err != nil {
@@ -123,6 +145,15 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	if _, active := e.active[call.Name]; !active {
 		return "", fmt.Errorf("tool_not_active: %s", call.Name)
 	}
+	if e.ext != nil {
+		hookOut, err := e.ext.RunToolCallHooks(call.Name, call.Arguments)
+		if err != nil {
+			return "", err
+		}
+		if hookOut.Blocked {
+			return "", fmt.Errorf("tool_blocked: %s", hookOut.Reason)
+		}
+	}
 	tool, ok := e.tools[call.Name]
 	if !ok {
 		return "", fmt.Errorf("tool_not_found: %s", call.Name)
@@ -130,6 +161,13 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err != nil {
 		return "", err
+	}
+	if e.ext != nil {
+		mutated, err := e.ext.RunToolResultHooks(call.Name, result)
+		if err != nil {
+			return "", err
+		}
+		result = mutated.Result
 	}
 	if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
 		return "", err
