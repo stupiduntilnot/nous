@@ -1,0 +1,11 @@
+{"v":"1","id":"evt-1","type":"agent_start","payload":{"run_id":"run-1"}}
+{"v":"1","id":"evt-2","type":"turn_start","payload":{"run_id":"run-1","turn_id":"1"}}
+{"v":"1","id":"evt-3","type":"message_start","payload":{"run_id":"run-1","turn_id":"1","message_id":"m1","role":"assistant"}}
+{"v":"1","id":"evt-4","type":"message_update","payload":{"run_id":"run-1","turn_id":"1","message_id":"m1","delta":"I will call a tool."}}
+{"v":"1","id":"evt-5","type":"message_end","payload":{"run_id":"run-1","turn_id":"1","message_id":"m1"}}
+{"v":"1","id":"evt-6","type":"tool_execution_start","payload":{"run_id":"run-1","turn_id":"1","tool_call_id":"tc1","tool_name":"demo.echo"}}
+{"v":"1","id":"evt-7","type":"tool_execution_update","payload":{"run_id":"run-1","turn_id":"1","tool_call_id":"tc1","status":"running"}}
+{"v":"1","id":"evt-8","type":"tool_execution_end","payload":{"run_id":"run-1","turn_id":"1","tool_call_id":"tc1","result":"demo.echo:hi"}}
+{"v":"1","id":"evt-9","type":"status","payload":{"run_id":"run-1","message":"tool completed"}}
+{"v":"1","id":"evt-10","type":"turn_end","payload":{"run_id":"run-1","turn_id":"1"}}
+{"v":"1","id":"evt-11","type":"agent_end","payload":{"run_id":"run-1"}}

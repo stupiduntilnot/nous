@@ -72,11 +72,13 @@
 ### B2. 产出 OpenAPI 风格协议规范（语义对齐 pi-mono）
 - 任务：
   - 新增协议规范文件（YAML/JSON）
+  - 新增 `docs/protocol/examples/*.ndjson` 协议样例（command/response/event）
   - 定义命令/响应/事件 schema
   - 编写语义对齐矩阵：逐项映射 `pi-mono` 语义
   - 标记差异边界（若有）
 - 验收：
   - 存在可机器读取规范文件
+  - 存在可回放 NDJSON 协议样例
   - 存在对齐矩阵
   - 协议样例可通过 schema 校验测试
   - 语义兼容测试通过（样例回放事件序列一致）

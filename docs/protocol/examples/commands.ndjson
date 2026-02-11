@@ -1,0 +1,10 @@
+{"v":"1","id":"cmd-1","type":"ping","payload":{}}
+{"v":"1","id":"cmd-2","type":"prompt","payload":{"text":"hello"}}
+{"v":"1","id":"cmd-3","type":"steer","payload":{"text":"focus on brevity"}}
+{"v":"1","id":"cmd-4","type":"follow_up","payload":{"text":"append one summary line"}}
+{"v":"1","id":"cmd-5","type":"set_active_tools","payload":{"tools":["demo.echo"]}}
+{"v":"1","id":"cmd-6","type":"new_session","payload":{}}
+{"v":"1","id":"cmd-7","type":"switch_session","payload":{"session_id":"sess-123"}}
+{"v":"1","id":"cmd-8","type":"branch_session","payload":{"session_id":"sess-123"}}
+{"v":"1","id":"cmd-9","type":"extension_command","payload":{"name":"echo","payload":{"text":"hi"}}}
+{"v":"1","id":"cmd-10","type":"abort","payload":{}}
