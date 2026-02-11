@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -111,5 +112,42 @@ func TestGeminiAdapterStream(t *testing.T) {
 	}
 	if evs[1].Type != EventTextDelta || evs[1].Delta != "hello gemini" {
 		t.Fatalf("unexpected text event: %+v", evs[1])
+	}
+}
+
+func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		rawTools, ok := req["tools"].([]any)
+		if !ok || len(rawTools) != 2 {
+			t.Fatalf("expected two tools in request, got: %#v", req["tools"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Prompt:      "hi",
+		ActiveTools: []string{"tool_a", "tool_b"},
+	}))
+	if len(evs) < 3 || evs[1].Type != EventTextDelta {
+		t.Fatalf("unexpected events: %+v", evs)
 	}
 }

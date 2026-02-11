@@ -48,6 +48,9 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 				{"role": "user", "content": req.Prompt},
 			},
 		}
+		if len(req.ActiveTools) > 0 {
+			payload["tools"] = buildOpenAITools(req.ActiveTools)
+		}
 		b, err := json.Marshal(payload)
 		if err != nil {
 			out <- Event{Type: EventError, Err: err}
@@ -131,4 +134,26 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 		out <- Event{Type: EventDone}
 	}()
 	return out
+}
+
+func buildOpenAITools(names []string) []map[string]any {
+	tools := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		tools = append(tools, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        name,
+				"description": "registered runtime tool",
+				"parameters": map[string]any{
+					"type":                 "object",
+					"properties":           map[string]any{},
+					"additionalProperties": true,
+				},
+			},
+		})
+	}
+	return tools
 }
