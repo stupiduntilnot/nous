@@ -12,12 +12,14 @@ import (
 	"sync"
 
 	"oh-my-agent/internal/protocol"
+	"oh-my-agent/internal/session"
 )
 
 type Server struct {
 	socketPath string
 	listener   net.Listener
 	wg         sync.WaitGroup
+	sessions   *session.Manager
 }
 
 func NewServer(socketPath string) *Server {
@@ -27,6 +29,14 @@ func NewServer(socketPath string) *Server {
 func (s *Server) Serve(ctx context.Context) error {
 	if err := ensureSocketDir(s.socketPath); err != nil {
 		return err
+	}
+	if s.sessions == nil {
+		sessDir := filepath.Join(filepath.Dir(s.socketPath), "sessions")
+		mgr, err := session.NewManager(sessDir)
+		if err != nil {
+			return fmt.Errorf("init session manager: %w", err)
+		}
+		s.sessions = mgr
 	}
 	_ = os.Remove(s.socketPath)
 
@@ -96,6 +106,58 @@ func (s *Server) handleConn(conn net.Conn) {
 					ID:      env.ID,
 					Type:    "pong",
 					Payload: map[string]any{"message": "pong"},
+				},
+				OK: true,
+			})
+		case protocol.CmdNewSession:
+			id, err := s.sessions.NewSession()
+			if err != nil {
+				_ = writeResponse(conn, protocol.ResponseEnvelope{
+					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
+					OK:       false,
+					Error:    &protocol.ErrorBody{Code: "session_error", Message: err.Error()},
+				})
+				continue
+			}
+			_ = writeResponse(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{
+					V:    protocol.Version,
+					ID:   env.ID,
+					Type: "session",
+					Payload: map[string]any{
+						"session_id": id,
+						"active":     true,
+					},
+				},
+				OK: true,
+			})
+		case protocol.CmdSwitchSession:
+			rawID, ok := env.Payload["session_id"].(string)
+			if !ok || rawID == "" {
+				_ = writeResponse(conn, protocol.ResponseEnvelope{
+					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
+					OK:       false,
+					Error:    &protocol.ErrorBody{Code: "invalid_payload", Message: "session_id is required"},
+				})
+				continue
+			}
+			if err := s.sessions.SwitchSession(rawID); err != nil {
+				_ = writeResponse(conn, protocol.ResponseEnvelope{
+					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
+					OK:       false,
+					Error:    &protocol.ErrorBody{Code: "session_not_found", Message: err.Error()},
+				})
+				continue
+			}
+			_ = writeResponse(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{
+					V:    protocol.Version,
+					ID:   env.ID,
+					Type: "session",
+					Payload: map[string]any{
+						"session_id": rawID,
+						"active":     true,
+					},
 				},
 				OK: true,
 			})
