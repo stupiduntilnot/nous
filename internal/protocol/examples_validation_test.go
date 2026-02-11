@@ -27,6 +27,7 @@ func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
 		if env.ID == "" || env.Type == "" {
 			t.Fatalf("missing required fields on line %d", count+1)
 		}
+		assertCommandPayloadSemantics(t, env, count+1)
 		count++
 	}
 	if err := scanner.Err(); err != nil {
@@ -34,6 +35,32 @@ func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatalf("commands example should not be empty")
+	}
+}
+
+func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
+	t.Helper()
+	switch CommandType(env.Type) {
+	case CmdPing, CmdAbort, CmdNewSession:
+		return
+	case CmdPrompt, CmdSteer, CmdFollowUp:
+		if text, _ := env.Payload["text"].(string); text == "" {
+			t.Fatalf("command line %d (%s) requires non-empty payload.text", line, env.Type)
+		}
+	case CmdSetActiveTools:
+		if _, ok := env.Payload["tools"].([]any); !ok {
+			t.Fatalf("command line %d (%s) requires payload.tools array", line, env.Type)
+		}
+	case CmdSwitchSession, CmdBranchSession:
+		if sid, _ := env.Payload["session_id"].(string); sid == "" {
+			t.Fatalf("command line %d (%s) requires payload.session_id", line, env.Type)
+		}
+	case CmdExtensionCmd:
+		if name, _ := env.Payload["name"].(string); name == "" {
+			t.Fatalf("command line %d (%s) requires payload.name", line, env.Type)
+		}
+	default:
+		t.Fatalf("unsupported command in examples: %s", env.Type)
 	}
 }
 
