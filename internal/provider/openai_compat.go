@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type openAICompatAdapter struct {
@@ -216,7 +217,23 @@ func normalizeToolName(raw string, activeTools []string) string {
 			}
 		}
 	}
+	normalizedRaw := normalizeToolToken(raw)
+	for _, name := range activeTools {
+		if strings.Contains(normalizedRaw, normalizeToolToken(name)) {
+			return name
+		}
+	}
 	return ""
+}
+
+func normalizeToolToken(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func buildOpenAITools(names []string) []map[string]any {
@@ -225,16 +242,78 @@ func buildOpenAITools(names []string) []map[string]any {
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
+		description := "registered runtime tool"
+		parameters := map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": true,
+		}
+		switch name {
+		case "read":
+			description = "Read file contents by path. Supports optional offset and limit."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Path to the file to read (relative or absolute)",
+					},
+					"offset": map[string]any{
+						"type":        "number",
+						"description": "Optional line offset (0-based)",
+					},
+					"limit": map[string]any{
+						"type":        "number",
+						"description": "Optional max number of lines to read",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": true,
+			}
+		case "ls":
+			description = "List directory contents."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Directory path to list. Defaults to current directory.",
+					},
+				},
+				"additionalProperties": true,
+			}
+		case "find":
+			description = "Find files under a path using substring match."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Root directory to search. Defaults to current directory.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Substring to match in relative file paths.",
+					},
+					"max_results": map[string]any{
+						"type":        "number",
+						"description": "Maximum number of matches to return.",
+					},
+					"max_depth": map[string]any{
+						"type":        "number",
+						"description": "Maximum depth to walk. -1 means unlimited.",
+					},
+				},
+				"required":             []string{"query"},
+				"additionalProperties": true,
+			}
+		}
 		tools = append(tools, map[string]any{
 			"type": "function",
 			"function": map[string]any{
 				"name":        name,
-				"description": "registered runtime tool",
-				"parameters": map[string]any{
-					"type":                 "object",
-					"properties":           map[string]any{},
-					"additionalProperties": true,
-				},
+				"description": description,
+				"parameters":  parameters,
 			},
 		})
 	}

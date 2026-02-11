@@ -74,7 +74,7 @@ func NewReadTool(cwd string) core.Tool {
 }
 
 func resolveReadPathArg(args map[string]any) string {
-	keys := []string{"path", "file_path", "filepath", "file", "target_path"}
+	keys := []string{"path", "file_path", "filePath", "filepath", "file", "target_path", "targetPath"}
 	for _, key := range keys {
 		v, ok := args[key]
 		if !ok {

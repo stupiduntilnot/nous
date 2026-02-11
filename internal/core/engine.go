@@ -158,7 +158,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				return "", err
 			}
 		}
-		if awaitNext && len(stepToolResults) > 0 {
+		// Continue the run whenever this turn produced tool results.
+		// Some providers do not emit explicit await-next markers even when
+		// tool calls are present, but pi-style semantics still require
+		// tool_result -> next model turn until convergence.
+		if len(stepToolResults) > 0 {
 			if step == 7 {
 				err := fmt.Errorf("tool_loop_limit_exceeded")
 				e.runtime.Error("tool_loop_limit_exceeded", "tool await-next loop exceeded max rounds", err)
@@ -166,7 +170,9 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 			}
 			req.ToolResults = append(req.ToolResults, stepToolResults...)
 			req.Prompt = appendToolResultsToPrompt(req.Prompt, stepToolResults)
-			e.runtime.Status("await_next: continue_with_tool_results")
+			if awaitNext {
+				e.runtime.Status("await_next: continue_with_tool_results")
+			}
 			continue
 		}
 		break
@@ -190,6 +196,7 @@ func appendToolResultsToPrompt(prompt string, toolResults []string) string {
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
+	b.WriteString("\nUse the tool results above to answer directly. Do not call tools again.\n")
 	return strings.TrimSpace(b.String())
 }
 
@@ -198,6 +205,13 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 		return "", err
 	}
 	defer func() { _ = e.runtime.ToolExecutionEnd(call.ID, call.Name) }()
+
+	normalizedArgs, err := normalizeToolArguments(call.Name, call.Arguments)
+	if err != nil {
+		e.runtime.Warning("tool_validation_error", err.Error())
+		return fmt.Sprintf("tool_error: %s", err.Error()), nil
+	}
+	call.Arguments = normalizedArgs
 
 	if e.ext != nil {
 		hookOut, err := e.ext.RunToolCallHooks(call.Name, call.Arguments)
@@ -242,12 +256,12 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	if _, active := e.active[call.Name]; !active {
 		err := fmt.Errorf("tool_not_active: %s", call.Name)
 		e.runtime.Warning("tool_not_active", err.Error())
-		return "", err
+		return fmt.Sprintf("tool_error: %s", err.Error()), nil
 	}
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err != nil {
-		e.runtime.Error("tool_execution_error", "registered tool execution failed", err)
-		return "", err
+		e.runtime.Warning("tool_execution_error", err.Error())
+		return fmt.Sprintf("tool_error: %v", err), nil
 	}
 	if e.ext != nil {
 		mutated, err := e.ext.RunToolResultHooks(call.Name, result)

@@ -99,10 +99,14 @@ func (e *echoPromptAdapter) Stream(ctx context.Context, req provider.Request) <-
 
 type toolLogProvider struct{}
 
-func (p toolLogProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+func (p toolLogProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
+		if len(req.ToolResults) > 0 {
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
 		out <- provider.Event{Type: provider.EventStart}
 		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "tc-1", Name: "echo", Arguments: map[string]any{"text": "x"}}}
 		out <- provider.Event{Type: provider.EventDone}

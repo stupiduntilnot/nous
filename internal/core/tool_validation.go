@@ -1,0 +1,163 @@
+package core
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+func normalizeToolArguments(toolName string, args map[string]any) (map[string]any, error) {
+	switch toolName {
+	case "read":
+		return normalizeReadArgs(args)
+	case "ls":
+		return normalizeLSArgs(args)
+	case "find":
+		return normalizeFindArgs(args)
+	default:
+		return args, nil
+	}
+}
+
+func normalizeReadArgs(args map[string]any) (map[string]any, error) {
+	path := resolveStringArg(args,
+		"path", "file_path", "filePath", "filepath", "file", "target_path", "targetPath")
+	if path == "" {
+		return nil, fmt.Errorf("validation_failed: read.path is required")
+	}
+	out := map[string]any{"path": path}
+
+	if n, ok, err := resolveIntArg(args, []string{"offset", "start_line", "startLine"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: read.offset must be a number")
+	} else if ok {
+		if n < 0 {
+			return nil, fmt.Errorf("validation_failed: read.offset must be >= 0")
+		}
+		out["offset"] = n
+	}
+	if n, ok, err := resolveIntArg(args, []string{"limit", "max_lines", "maxLines"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: read.limit must be a number")
+	} else if ok {
+		if n == 0 || n < -1 {
+			return nil, fmt.Errorf("validation_failed: read.limit must be > 0 or -1")
+		}
+		out["limit"] = n
+	}
+	return out, nil
+}
+
+func normalizeLSArgs(args map[string]any) (map[string]any, error) {
+	path := resolveStringArg(args, "path", "dir", "directory", "target_path", "targetPath")
+	if path == "" {
+		path = "."
+	}
+	return map[string]any{"path": path}, nil
+}
+
+func normalizeFindArgs(args map[string]any) (map[string]any, error) {
+	query := resolveStringArg(args, "query", "pattern")
+	if query == "" {
+		return nil, fmt.Errorf("validation_failed: find.query is required")
+	}
+	out := map[string]any{"query": query}
+	path := resolveStringArg(args, "path", "dir", "directory", "target_path", "targetPath")
+	if path == "" {
+		path = "."
+	}
+	out["path"] = path
+
+	if n, ok, err := resolveIntArg(args, []string{"max_results", "maxResults"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: find.max_results must be a number")
+	} else if ok {
+		if n <= 0 {
+			return nil, fmt.Errorf("validation_failed: find.max_results must be > 0")
+		}
+		out["max_results"] = n
+	}
+	if n, ok, err := resolveIntArg(args, []string{"max_depth", "maxDepth"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: find.max_depth must be a number")
+	} else if ok {
+		if n < -1 {
+			return nil, fmt.Errorf("validation_failed: find.max_depth must be >= -1")
+		}
+		out["max_depth"] = n
+	}
+	return out, nil
+}
+
+func resolveStringArg(args map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		if s := normalizeStringArgValue(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func normalizeStringArgValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case map[string]any:
+		if p, ok := x["path"]; ok {
+			return normalizeStringArgValue(p)
+		}
+		if p, ok := x["value"]; ok {
+			return normalizeStringArgValue(p)
+		}
+	case []any:
+		if len(x) > 0 {
+			return normalizeStringArgValue(x[0])
+		}
+	}
+	return ""
+}
+
+func resolveIntArg(args map[string]any, keys []string) (int, bool, error) {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		n, err := toInt(v)
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	}
+	return 0, false, nil
+}
+
+func toInt(v any) (int, error) {
+	switch n := v.(type) {
+	case int:
+		return n, nil
+	case int32:
+		return int(n), nil
+	case int64:
+		return int(n), nil
+	case float64:
+		return int(n), nil
+	case float32:
+		return int(n), nil
+	case string:
+		s := strings.TrimSpace(n)
+		if s == "" {
+			return 0, fmt.Errorf("empty_number")
+		}
+		if i, err := strconv.Atoi(s); err == nil {
+			return i, nil
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, err
+		}
+		return int(f), nil
+	default:
+		return 0, fmt.Errorf("not_number")
+	}
+}

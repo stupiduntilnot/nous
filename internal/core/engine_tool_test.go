@@ -10,10 +10,14 @@ import (
 
 type scriptedProvider struct{}
 
-func (scriptedProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+func (scriptedProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
+		if len(req.ToolResults) > 0 {
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
 		out <- provider.Event{Type: provider.EventStart}
 		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t1", Name: "first", Arguments: map[string]any{}}}
 		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t2", Name: "second", Arguments: map[string]any{}}}
@@ -85,17 +89,21 @@ func TestSetActiveToolsFiltersProviderPayload(t *testing.T) {
 
 type inactiveToolCallProvider struct{}
 
-func (inactiveToolCallProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+func (inactiveToolCallProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
+		if len(req.ToolResults) > 0 {
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
 		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t1", Name: "second"}}
 		out <- provider.Event{Type: provider.EventDone}
 	}()
 	return out
 }
 
-func TestInactiveToolCallIsRejected(t *testing.T) {
+func TestInactiveToolCallReturnsToolErrorMessage(t *testing.T) {
 	r := NewRuntime()
 	e := NewEngine(r, inactiveToolCallProvider{})
 	e.SetTools([]Tool{
@@ -105,8 +113,12 @@ func TestInactiveToolCallIsRejected(t *testing.T) {
 	if err := e.SetActiveTools([]string{"first"}); err != nil {
 		t.Fatalf("set active tools failed: %v", err)
 	}
-	if _, err := e.Prompt(context.Background(), "run-inactive", "x"); err == nil {
-		t.Fatalf("expected inactive tool call to fail")
+	out, err := e.Prompt(context.Background(), "run-inactive", "x")
+	if err != nil {
+		t.Fatalf("expected no fatal error, got: %v", err)
+	}
+	if !strings.Contains(out, "tool_error: tool_not_active: second") {
+		t.Fatalf("unexpected output: %q", out)
 	}
 }
 
@@ -185,5 +197,47 @@ func TestAwaitNextTurnLimitExceeded(t *testing.T) {
 		t.Fatalf("expected loop limit error")
 	} else if err.Error() != "tool_loop_limit_exceeded" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+type toolCallNoAwaitProvider struct {
+	calls int
+}
+
+func (p *toolCallNoAwaitProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	p.calls++
+	out := make(chan provider.Event)
+	go func(call int) {
+		defer close(out)
+		if call == 1 {
+			out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t1", Name: "first"}}
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "done"}
+		out <- provider.Event{Type: provider.EventDone}
+	}(p.calls)
+	return out
+}
+
+func TestToolCallWithoutAwaitStillContinuesNextTurn(t *testing.T) {
+	r := NewRuntime()
+	p := &toolCallNoAwaitProvider{}
+	e := NewEngine(r, p)
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "tool-ok", nil
+		}},
+	})
+
+	out, err := e.Prompt(context.Background(), "run-tool-no-await", "hello")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if p.calls != 2 {
+		t.Fatalf("expected two provider calls, got %d", p.calls)
+	}
+	if out != "tool-okdone" {
+		t.Fatalf("unexpected output: %q", out)
 	}
 }

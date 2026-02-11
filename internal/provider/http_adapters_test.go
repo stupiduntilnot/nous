@@ -166,6 +166,37 @@ func TestOllamaAdapterTextToolCallFallback(t *testing.T) {
 	}
 }
 
+func TestOllamaAdapterTextToolCallFallbackCamelCaseName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "{\n  \"name\": \"readRegisteredRuntimeTool\",\n  \"arguments\": {\"path\": \"/tmp/a.txt\"}\n}",
+					},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOllamaAdapter("ollama", "qwen2.5-coder:7b", srv.URL)
+	if err != nil {
+		t.Fatalf("new ollama adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Prompt:      "read file",
+		ActiveTools: []string{"read", "ls"},
+	}))
+	if len(evs) < 4 {
+		t.Fatalf("unexpected event count: %d", len(evs))
+	}
+	if evs[1].Type != EventToolCall || evs[1].ToolCall.Name != "read" {
+		t.Fatalf("expected read tool call, got %+v", evs[1])
+	}
+}
+
 func TestGeminiAdapterStream(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -204,6 +235,22 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 		if !ok || len(rawTools) != 2 {
 			t.Fatalf("expected two tools in request, got: %#v", req["tools"])
 		}
+		readTool, ok := rawTools[0].(map[string]any)
+		if !ok {
+			t.Fatalf("tool payload must be object: %#v", rawTools[0])
+		}
+		fn, ok := readTool["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("function payload missing: %#v", readTool)
+		}
+		params, ok := fn["parameters"].(map[string]any)
+		if !ok {
+			t.Fatalf("parameters missing: %#v", fn)
+		}
+		required, ok := params["required"].([]any)
+		if !ok || len(required) == 0 || required[0] != "path" {
+			t.Fatalf("expected required path for read schema, got: %#v", params["required"])
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -220,7 +267,7 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
 		Prompt:      "hi",
-		ActiveTools: []string{"tool_a", "tool_b"},
+		ActiveTools: []string{"read", "tool_b"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
 		t.Fatalf("unexpected events: %+v", evs)
