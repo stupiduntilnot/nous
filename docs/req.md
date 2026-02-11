@@ -119,6 +119,10 @@
 
 ### 6.1 IPC（本期）
 
+0. 传输与线协议（已定）
+- transport：仅支持 `Unix Domain Socket (UDS)`。
+- wire protocol：使用 `NDJSON`（一行一个 JSON 消息）。
+
 1. 命令通道
 - `prompt`
 - `steer`
@@ -141,7 +145,7 @@
 
 ### 6.2 Task Pipeline（预留）
 
-1. Core 必须保留替换 IPC transport 的能力。
+1. Core 必须保留替换 IPC transport 的能力（在不破坏现有 UDS + NDJSON 协议语义前提下演进）。
 2. 不把 transport 与业务逻辑耦合。
 3. 允许未来把命令与事件映射到异步任务队列。
 4. 该层属于本项目自主设计，不要求保持与 PI 一致。
