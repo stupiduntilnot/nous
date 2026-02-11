@@ -150,17 +150,23 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				awaitNext = true
 			case provider.EventError:
 				if ev.Err != nil {
+					e.runtime.Error("provider_error", "provider stream returned error", ev.Err)
 					return "", ev.Err
 				}
-				return "", fmt.Errorf("provider_error")
+				err := fmt.Errorf("provider_error")
+				e.runtime.Error("provider_error", "provider stream returned error", err)
+				return "", err
 			}
 		}
 		if awaitNext && len(stepToolResults) > 0 {
 			if step == 7 {
-				return "", fmt.Errorf("tool_loop_limit_exceeded")
+				err := fmt.Errorf("tool_loop_limit_exceeded")
+				e.runtime.Error("tool_loop_limit_exceeded", "tool await-next loop exceeded max rounds", err)
+				return "", err
 			}
 			req.ToolResults = append(req.ToolResults, stepToolResults...)
 			req.Prompt = appendToolResultsToPrompt(req.Prompt, stepToolResults)
+			e.runtime.Status("await_next: continue_with_tool_results")
 			continue
 		}
 		break
@@ -196,10 +202,13 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	if e.ext != nil {
 		hookOut, err := e.ext.RunToolCallHooks(call.Name, call.Arguments)
 		if err != nil {
+			e.runtime.Error("extension_error", "tool_call hook failed", err)
 			return "", err
 		}
 		if hookOut.Blocked {
-			return "", fmt.Errorf("tool_blocked: %s", hookOut.Reason)
+			err := fmt.Errorf("tool_blocked: %s", hookOut.Reason)
+			e.runtime.Warning("tool_blocked", err.Error())
+			return "", err
 		}
 	}
 	tool, ok := e.tools[call.Name]
@@ -207,6 +216,7 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 		if e.ext != nil {
 			extResult, handled, err := e.ext.ExecuteTool(call.Name, call.Arguments)
 			if err != nil {
+				e.runtime.Error("extension_error", "extension tool execution failed", err)
 				return "", err
 			}
 			if handled {
@@ -214,6 +224,7 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 				if e.ext != nil {
 					mutated, err := e.ext.RunToolResultHooks(call.Name, result)
 					if err != nil {
+						e.runtime.Error("extension_error", "tool_result hook failed", err)
 						return "", err
 					}
 					result = mutated.Result
@@ -224,18 +235,24 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 				return result, nil
 			}
 		}
-		return "", fmt.Errorf("tool_not_found: %s", call.Name)
+		err := fmt.Errorf("tool_not_found: %s", call.Name)
+		e.runtime.Warning("tool_not_found", err.Error())
+		return "", err
 	}
 	if _, active := e.active[call.Name]; !active {
-		return "", fmt.Errorf("tool_not_active: %s", call.Name)
+		err := fmt.Errorf("tool_not_active: %s", call.Name)
+		e.runtime.Warning("tool_not_active", err.Error())
+		return "", err
 	}
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err != nil {
+		e.runtime.Error("tool_execution_error", "registered tool execution failed", err)
 		return "", err
 	}
 	if e.ext != nil {
 		mutated, err := e.ext.RunToolResultHooks(call.Name, result)
 		if err != nil {
+			e.runtime.Error("extension_error", "tool_result hook failed", err)
 			return "", err
 		}
 		result = mutated.Result

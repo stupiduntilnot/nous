@@ -15,6 +15,9 @@ const (
 	EventToolExecutionStart  EventType = "tool_execution_start"
 	EventToolExecutionUpdate EventType = "tool_execution_update"
 	EventToolExecutionEnd    EventType = "tool_execution_end"
+	EventStatus              EventType = "status"
+	EventWarning             EventType = "warning"
+	EventError               EventType = "error"
 )
 
 type Event struct {
@@ -26,6 +29,9 @@ type Event struct {
 	Delta      string    `json:"delta,omitempty"`
 	ToolCallID string    `json:"tool_call_id,omitempty"`
 	ToolName   string    `json:"tool_name,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	Code       string    `json:"code,omitempty"`
+	Cause      string    `json:"cause,omitempty"`
 	Timestamp  string    `json:"ts"`
 }
 

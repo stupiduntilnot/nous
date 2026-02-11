@@ -131,3 +131,19 @@ func (r *Runtime) EndRun() error {
 	r.turnNumber = 0
 	return nil
 }
+
+func (r *Runtime) Status(message string) {
+	r.emit(Event{Type: EventStatus, RunID: r.runID, Turn: r.turnNumber, Message: message, Timestamp: nowTS()})
+}
+
+func (r *Runtime) Warning(code, message string) {
+	r.emit(Event{Type: EventWarning, RunID: r.runID, Turn: r.turnNumber, Code: code, Message: message, Timestamp: nowTS()})
+}
+
+func (r *Runtime) Error(code, message string, cause error) {
+	ev := Event{Type: EventError, RunID: r.runID, Turn: r.turnNumber, Code: code, Message: message, Timestamp: nowTS()}
+	if cause != nil {
+		ev.Cause = cause.Error()
+	}
+	r.emit(ev)
+}
