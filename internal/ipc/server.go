@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -28,6 +29,9 @@ type Server struct {
 	engine     *core.Engine
 	loop       *core.CommandLoop
 	timeout    time.Duration
+	logWriter  io.Writer
+	logMu      sync.Mutex
+	unsub      func()
 
 	dispatchOverride func(protocol.Envelope) protocol.ResponseEnvelope
 }
@@ -42,7 +46,7 @@ type sessionMessageRecord struct {
 }
 
 func NewServer(socketPath string) *Server {
-	return &Server{socketPath: socketPath, timeout: 3 * time.Second}
+	return &Server{socketPath: socketPath, timeout: 3 * time.Second, logWriter: os.Stderr}
 }
 
 func (s *Server) SetEngine(engine *core.Engine, loop *core.CommandLoop) {
@@ -52,6 +56,14 @@ func (s *Server) SetEngine(engine *core.Engine, loop *core.CommandLoop) {
 
 func (s *Server) SetSessionManager(mgr *session.Manager) {
 	s.sessions = mgr
+}
+
+func (s *Server) SetLogWriter(w io.Writer) {
+	if w == nil {
+		s.logWriter = io.Discard
+		return
+	}
+	s.logWriter = w
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -72,6 +84,11 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	if s.loop == nil {
 		s.loop = core.NewCommandLoop(s.engine)
+	}
+	if s.unsub == nil {
+		s.unsub = s.engine.Subscribe(func(ev core.Event) {
+			s.logRuntimeEvent(ev)
+		})
 	}
 	s.loop.SetOnTurnEnd(func(r core.TurnResult) {
 		_ = s.appendTurnRecord(r.RunID, string(r.Kind), r.Input, r.Output)
@@ -106,6 +123,10 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 func (s *Server) Close() error {
+	if s.unsub != nil {
+		s.unsub()
+		s.unsub = nil
+	}
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
@@ -459,4 +480,24 @@ func writeResponse(conn net.Conn, resp protocol.ResponseEnvelope) error {
 func ensureSocketDir(socketPath string) error {
 	dir := filepath.Dir(socketPath)
 	return os.MkdirAll(dir, 0o755)
+}
+
+func (s *Server) logRuntimeEvent(ev core.Event) {
+	logEvent := core.NewLogEvent("info", string(ev.Type))
+	logEvent.RunID = ev.RunID
+	if ev.Turn > 0 {
+		logEvent.TurnID = fmt.Sprintf("turn-%d", ev.Turn)
+	}
+	logEvent.MessageID = ev.MessageID
+	logEvent.ToolCallID = ev.ToolCallID
+	s.writeLog(logEvent)
+}
+
+func (s *Server) writeLog(ev core.LogEvent) {
+	if s.logWriter == nil {
+		return
+	}
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	_ = core.WriteLogEvent(s.logWriter, ev)
 }

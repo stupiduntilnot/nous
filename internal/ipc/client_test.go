@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,19 @@ func (e *echoPromptAdapter) Stream(ctx context.Context, req provider.Request) <-
 	return out
 }
 
+type toolLogProvider struct{}
+
+func (p toolLogProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "tc-1", Name: "echo", Arguments: map[string]any{"text": "x"}}}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
 func TestCorectlPing(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
@@ -84,6 +98,73 @@ func TestCorectlPing(t *testing.T) {
 	cancel()
 	if err := <-errCh; err != nil {
 		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestServerLogsRuntimeContextFields(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	var logs bytes.Buffer
+	srv.SetLogWriter(&logs)
+
+	e := core.NewEngine(core.NewRuntime(), toolLogProvider{})
+	e.SetTools([]core.Tool{
+		core.ToolFunc{ToolName: "echo", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "ok", nil
+		}},
+	})
+	srv.engine = e
+	srv.loop = core.NewCommandLoop(e)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "log-1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "log me", "wait": true},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("prompt wait failed: resp=%+v err=%v", resp, err)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+
+	seenRun := false
+	seenTurn := false
+	seenMessage := false
+	seenTool := false
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(line), &decoded); err != nil {
+			t.Fatalf("invalid log json: %v (%q)", err, line)
+		}
+		if _, ok := decoded["run_id"]; ok {
+			seenRun = true
+		}
+		if _, ok := decoded["turn_id"]; ok {
+			seenTurn = true
+		}
+		if _, ok := decoded["message_id"]; ok {
+			seenMessage = true
+		}
+		if _, ok := decoded["tool_call_id"]; ok {
+			seenTool = true
+		}
+	}
+	if !seenRun || !seenTurn || !seenMessage || !seenTool {
+		t.Fatalf("missing expected log context fields: run=%v turn=%v message=%v tool=%v logs=%q", seenRun, seenTurn, seenMessage, seenTool, logs.String())
 	}
 }
 
