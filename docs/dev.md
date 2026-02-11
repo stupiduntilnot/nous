@@ -125,7 +125,7 @@
   - 显示连接状态
 - 验收：
   - 人工联调通过（Core+TUI）
-  - 保留可复现联调证据（如 `scripts/tui-smoke.sh` 输出日志或终端 transcript）
+  - 保留可复现联调证据（如执行 `scripts/tui-evidence.sh` 生成 `artifacts/tui-evidence-*.log`）
 
 ### C4. 联通阶段门禁
 - 任务：
