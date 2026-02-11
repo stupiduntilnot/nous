@@ -66,6 +66,10 @@ func main() {
 			continue
 		}
 		if resp.OK {
+			if resp.Type == "result" {
+				renderResult(resp.Payload)
+				continue
+			}
 			fmt.Printf("ok: type=%s payload=%v\n", resp.Type, resp.Payload)
 			continue
 		}
@@ -94,7 +98,7 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 		if text == "" {
 			return "", nil, false, fmt.Errorf("prompt text is required")
 		}
-		return string(protocol.CmdPrompt), map[string]any{"text": text}, false, nil
+		return string(protocol.CmdPrompt), map[string]any{"text": text, "wait": true}, false, nil
 	case strings.HasPrefix(line, "steer "):
 		text := strings.TrimSpace(strings.TrimPrefix(line, "steer "))
 		if text == "" {
@@ -130,6 +134,30 @@ func printHelp() {
 	fmt.Println("  status")
 	fmt.Println("  help")
 	fmt.Println("  quit")
+}
+
+func renderResult(payload map[string]any) {
+	if out, ok := payload["output"].(string); ok {
+		fmt.Printf("assistant: %s\n", out)
+	}
+	rawEvents, _ := payload["events"].([]any)
+	for _, item := range rawEvents {
+		ev, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		tp, _ := ev["type"].(string)
+		switch tp {
+		case "message_update":
+			if delta, ok := ev["delta"].(string); ok && delta != "" {
+				fmt.Printf("message: %s\n", delta)
+			}
+		case "tool_execution_start", "tool_execution_update", "tool_execution_end":
+			fmt.Printf("tool: %s %v\n", tp, ev)
+		case "agent_start", "agent_end", "turn_start", "turn_end":
+			fmt.Printf("status: %s\n", tp)
+		}
+	}
 }
 
 func printStatus(socket string) {

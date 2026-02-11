@@ -296,6 +296,43 @@ func TestAbortWithoutActiveRunReturnsRejected(t *testing.T) {
 	}
 }
 
+func TestPromptWaitReturnsEvents(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "wait-1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello", "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("prompt wait failed: %v", err)
+	}
+	if !resp.OK || resp.Type != "result" {
+		t.Fatalf("unexpected prompt wait response: %+v", resp)
+	}
+	if _, ok := resp.Payload["output"].(string); !ok {
+		t.Fatalf("expected output in payload")
+	}
+	rawEvents, ok := resp.Payload["events"].([]any)
+	if !ok || len(rawEvents) == 0 {
+		t.Fatalf("expected non-empty events payload, got: %#v", resp.Payload["events"])
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestCommandTimeoutReturnsStandardError(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)

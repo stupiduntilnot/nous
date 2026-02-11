@@ -31,6 +31,10 @@ func (e *Engine) SetExtensionManager(m *extension.Manager) {
 	e.ext = m
 }
 
+func (e *Engine) Subscribe(fn EventListener) func() {
+	return e.runtime.Subscribe(fn)
+}
+
 func (e *Engine) SetTools(tools []Tool) {
 	e.tools = map[string]Tool{}
 	e.active = map[string]struct{}{}

@@ -189,6 +189,10 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			if !ok || text == "" {
 				return responseErr(env.ID, "invalid_payload", "text is required")
 			}
+			wait, _ := env.Payload["wait"].(bool)
+			if wait {
+				return s.promptSync(env.ID, text)
+			}
 			if err := s.loop.Prompt(text); err != nil {
 				return responseErr(env.ID, "command_rejected", err.Error())
 			}
@@ -255,9 +259,27 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		}
 }
 
-func writeOK(conn net.Conn, resp protocol.ResponseEnvelope) error {
-	resp.OK = true
-	return writeResponse(conn, resp)
+func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
+	events := make([]core.Event, 0, 16)
+	unsub := s.engine.Subscribe(func(ev core.Event) {
+		events = append(events, ev)
+	})
+	defer unsub()
+
+	runID := fmt.Sprintf("sync-%d", time.Now().UnixNano())
+	out, err := s.engine.Prompt(context.Background(), runID, text)
+	if err != nil {
+		return responseErr(reqID, "provider_error", err.Error())
+	}
+	return responseOK(protocol.Envelope{
+		V:    protocol.Version,
+		ID:   reqID,
+		Type: "result",
+		Payload: map[string]any{
+			"output": out,
+			"events": events,
+		},
+	})
 }
 
 func responseOK(env protocol.Envelope) protocol.ResponseEnvelope {
