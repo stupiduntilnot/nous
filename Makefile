@@ -4,6 +4,7 @@ build:
 	go build ./...
 
 test:
+	./scripts/phase-gate.sh
 	go test ./...
 
 lint:
