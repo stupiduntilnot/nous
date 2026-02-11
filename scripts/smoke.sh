@@ -39,4 +39,14 @@ SESSION_ID=$(echo "$NEW_OUT" | rg '"session_id"' | sed -E 's/.*"session_id": "([
 
 go run ./cmd/corectl --socket "$SOCKET" switch "$SESSION_ID" >/dev/null
 
+ASYNC_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt_async "hello async smoke")
+echo "$ASYNC_OUT" | rg -q '"command": "prompt"' || {
+  echo "async prompt missing accepted command payload: $ASYNC_OUT" >&2
+  exit 1
+}
+echo "$ASYNC_OUT" | rg -q "\"session_id\": \"$SESSION_ID\"" || {
+  echo "async prompt missing/incorrect session_id: $ASYNC_OUT" >&2
+  exit 1
+}
+
 echo "smoke ok"
