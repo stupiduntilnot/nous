@@ -50,3 +50,19 @@ func TestDevPlanPhase2GateScriptsListed(t *testing.T) {
 		}
 	}
 }
+
+func TestDevPlanMentionsTUIEvidenceArtifactCommand(t *testing.T) {
+	b, err := os.ReadFile("../../docs/dev.md")
+	if err != nil {
+		t.Fatalf("failed to read docs/dev.md: %v", err)
+	}
+	content := string(b)
+	for _, needle := range []string{
+		"make e2e-tui-evidence",
+		"artifacts/tui-evidence-*.log",
+	} {
+		if !strings.Contains(content, needle) {
+			t.Fatalf("docs/dev.md missing tui evidence marker %q", needle)
+		}
+	}
+}
