@@ -86,11 +86,13 @@ go run ./cmd/tui /tmp/pi-core.sock
 ## 7. Automated Regression (recommended before release)
 
 - [ ] `make e2e-pingpong` passes
+- [ ] `make e2e-tui-evidence` generates a transcript under `artifacts/`
 - [ ] `make phase-gate` passes
 - [ ] `make ci` passes
 
 ```bash
 make e2e-pingpong
+make e2e-tui-evidence
 make phase-gate
 make ci
 ```

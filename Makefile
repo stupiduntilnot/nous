@@ -1,4 +1,4 @@
-.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui
+.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
 
 build:
 	go build ./...
@@ -44,3 +44,6 @@ e2e-protocol-compat:
 
 e2e-tui:
 	./scripts/tui-smoke.sh
+
+e2e-tui-evidence:
+	./scripts/tui-evidence.sh
