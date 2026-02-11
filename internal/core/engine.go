@@ -31,6 +31,20 @@ func (e *Engine) SetExtensionManager(m *extension.Manager) {
 	e.ext = m
 }
 
+func (e *Engine) ExecuteExtensionCommand(name string, payload map[string]any) (map[string]any, error) {
+	if e.ext == nil {
+		return nil, fmt.Errorf("extension_not_configured")
+	}
+	out, handled, err := e.ext.ExecuteCommand(name, payload)
+	if err != nil {
+		return nil, err
+	}
+	if !handled {
+		return nil, fmt.Errorf("extension_command_not_found: %s", name)
+	}
+	return out, nil
+}
+
 func (e *Engine) Subscribe(fn EventListener) func() {
 	return e.runtime.Subscribe(fn)
 }

@@ -14,6 +14,7 @@ This table tracks semantic compatibility targets against `pi-mono` runtime behav
 | `new_session` resets context | yes | same | aligned |
 | `switch_session` switches persisted context | yes | same | aligned |
 | `branch_session` forks context from a parent session | yes (session-tree semantics) | same | aligned |
+| `extension_command` invokes registered extension command handlers | runtime extension APIs exist, wire shape differs | same intent | aligned-with-note |
 
 ## Event Lifecycle
 

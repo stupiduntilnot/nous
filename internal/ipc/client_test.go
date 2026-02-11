@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"oh-my-agent/internal/core"
+	"oh-my-agent/internal/extension"
 	"oh-my-agent/internal/provider"
 	"oh-my-agent/internal/protocol"
 	"oh-my-agent/internal/session"
@@ -219,6 +220,54 @@ func TestBranchSession(t *testing.T) {
 	}
 	if gotParent, _ := branchResp.Payload["parent_id"].(string); gotParent != parentID {
 		t.Fatalf("unexpected parent_id: got=%q want=%q", gotParent, parentID)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestExtensionCommandDispatch(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	m := extension.NewManager()
+	if err := m.RegisterCommand("hello", func(payload map[string]any) (map[string]any, error) {
+		name, _ := payload["name"].(string)
+		return map[string]any{"msg": "hi " + name}, nil
+	}); err != nil {
+		t.Fatalf("register extension command failed: %v", err)
+	}
+	e := core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	e.SetExtensionManager(m)
+	srv.engine = e
+	srv.loop = core.NewCommandLoop(e)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "ext-1",
+		Type: string(protocol.CmdExtensionCmd),
+		Payload: map[string]any{
+			"name":    "hello",
+			"payload": map[string]any{"name": "dev"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("extension command failed: %v", err)
+	}
+	if !resp.OK || resp.Type != "extension_result" {
+		t.Fatalf("unexpected extension command response: %+v", resp)
+	}
+	if got, _ := resp.Payload["msg"].(string); got != "hi dev" {
+		t.Fatalf("unexpected extension command payload: %+v", resp.Payload)
 	}
 
 	cancel()

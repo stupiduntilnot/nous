@@ -83,7 +83,7 @@
 
 ### B3. 定义命令与事件最小集合
 - 任务：
-  - 命令：`ping`, `prompt`, `steer`, `follow_up`, `abort`, `set_active_tools`, `new_session`, `switch_session`, `branch_session`
+  - 命令：`ping`, `prompt`, `steer`, `follow_up`, `abort`, `set_active_tools`, `new_session`, `switch_session`, `branch_session`, `extension_command`
   - 事件：
     - `agent_start/agent_end`
     - `turn_start/turn_end`

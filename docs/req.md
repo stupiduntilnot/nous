@@ -132,6 +132,7 @@
 - `abort`
 - `set_active_tools`
 - `new_session` / `switch_session` / `branch_session`
+- `extension_command`
 
 2. 事件通道
 - agent_start / agent_end

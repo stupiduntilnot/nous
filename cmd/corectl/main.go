@@ -91,6 +91,18 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			tools = append(tools, t)
 		}
 		return string(protocol.CmdSetActiveTools), map[string]any{"tools": tools}, nil
+	case "ext":
+		if len(args) < 2 {
+			return "", nil, fmt.Errorf("ext requires command name")
+		}
+		name := args[1]
+		payload := map[string]any{}
+		if len(args) >= 3 {
+			if err := json.Unmarshal([]byte(args[2]), &payload); err != nil {
+				return "", nil, fmt.Errorf("ext payload must be JSON object: %w", err)
+			}
+		}
+		return string(protocol.CmdExtensionCmd), map[string]any{"name": name, "payload": payload}, nil
 	default:
 		return "", nil, fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -121,4 +133,5 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  switch <session_id>")
 	fmt.Fprintln(os.Stderr, "  branch <parent_session_id>")
 	fmt.Fprintln(os.Stderr, "  set_active_tools <tool...>")
+	fmt.Fprintln(os.Stderr, "  ext <name> [json_payload]")
 }

@@ -141,3 +141,23 @@ func TestEngineExecutesExtensionRegisteredTool(t *testing.T) {
 		t.Fatalf("unexpected output: %q", got)
 	}
 }
+
+func TestEngineExecutesExtensionCommand(t *testing.T) {
+	e := NewEngine(NewRuntime(), provider.NewMockAdapter())
+	m := extension.NewManager()
+	if err := m.RegisterCommand("hello", func(payload map[string]any) (map[string]any, error) {
+		name, _ := payload["name"].(string)
+		return map[string]any{"msg": "hi " + name}, nil
+	}); err != nil {
+		t.Fatalf("register extension command failed: %v", err)
+	}
+	e.SetExtensionManager(m)
+
+	out, err := e.ExecuteExtensionCommand("hello", map[string]any{"name": "agent"})
+	if err != nil {
+		t.Fatalf("execute extension command failed: %v", err)
+	}
+	if got, _ := out["msg"].(string); got != "hi agent" {
+		t.Fatalf("unexpected extension command output: %v", out)
+	}
+}

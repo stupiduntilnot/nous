@@ -286,6 +286,25 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 				Type:    "accepted",
 				Payload: map[string]any{"command": "set_active_tools", "count": len(tools)},
 			})
+		case protocol.CmdExtensionCmd:
+			name, ok := env.Payload["name"].(string)
+			if !ok || name == "" {
+				return responseErr(env.ID, "invalid_payload", "name is required")
+			}
+			rawPayload, _ := env.Payload["payload"].(map[string]any)
+			if rawPayload == nil {
+				rawPayload = map[string]any{}
+			}
+			out, err := s.engine.ExecuteExtensionCommand(name, rawPayload)
+			if err != nil {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			return responseOK(protocol.Envelope{
+				V:       protocol.Version,
+				ID:      env.ID,
+				Type:    "extension_result",
+				Payload: out,
+			})
 		default:
 			return responseErr(env.ID, "not_implemented", "command not implemented yet")
 		}
