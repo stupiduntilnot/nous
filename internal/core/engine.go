@@ -11,10 +11,18 @@ import (
 type Engine struct {
 	runtime  *Runtime
 	provider provider.Adapter
+	tools    map[string]Tool
 }
 
 func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
-	return &Engine{runtime: runtime, provider: p}
+	return &Engine{runtime: runtime, provider: p, tools: map[string]Tool{}}
+}
+
+func (e *Engine) SetTools(tools []Tool) {
+	e.tools = map[string]Tool{}
+	for _, t := range tools {
+		e.tools[t.Name()] = t
+	}
 }
 
 func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, error) {
@@ -49,6 +57,15 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 			if err := e.runtime.MessageUpdate(assistantID, ev.Delta); err != nil {
 				return "", err
 			}
+		case provider.EventToolCall:
+			res, err := e.executeToolCall(ctx, ev.ToolCall)
+			if err != nil {
+				return "", err
+			}
+			final += res
+			if err := e.runtime.MessageUpdate(assistantID, res); err != nil {
+				return "", err
+			}
 		case provider.EventError:
 			if ev.Err != nil {
 				return "", ev.Err
@@ -61,4 +78,24 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		return "", err
 	}
 	return final, nil
+}
+
+func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (string, error) {
+	if err := e.runtime.ToolExecutionStart(call.ID, call.Name); err != nil {
+		return "", err
+	}
+	defer func() { _ = e.runtime.ToolExecutionEnd(call.ID, call.Name) }()
+
+	tool, ok := e.tools[call.Name]
+	if !ok {
+		return "", fmt.Errorf("tool_not_found: %s", call.Name)
+	}
+	result, err := tool.Execute(ctx, call.Arguments)
+	if err != nil {
+		return "", err
+	}
+	if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
+		return "", err
+	}
+	return result, nil
 }

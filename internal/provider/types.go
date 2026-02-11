@@ -5,16 +5,24 @@ import "context"
 type EventType string
 
 const (
-	EventStart    EventType = "start"
+	EventStart     EventType = "start"
 	EventTextDelta EventType = "text_delta"
-	EventDone     EventType = "done"
-	EventError    EventType = "error"
+	EventToolCall  EventType = "tool_call"
+	EventDone      EventType = "done"
+	EventError     EventType = "error"
 )
 
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments map[string]any
+}
+
 type Event struct {
-	Type  EventType
-	Delta string
-	Err   error
+	Type     EventType
+	Delta    string
+	ToolCall ToolCall
+	Err      error
 }
 
 type Adapter interface {

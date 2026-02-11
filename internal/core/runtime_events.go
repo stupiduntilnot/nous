@@ -88,6 +88,39 @@ func (r *Runtime) MessageEnd(messageID string) error {
 	return nil
 }
 
+func (r *Runtime) ToolExecutionStart(toolCallID, toolName string) error {
+	if r.state != StateRunning && r.state != StateAborting {
+		return fmt.Errorf("invalid_transition: %s -> tool_execution_start", r.state)
+	}
+	if toolCallID == "" || toolName == "" {
+		return fmt.Errorf("invalid_tool_call")
+	}
+	r.emit(Event{Type: EventToolExecutionStart, RunID: r.runID, Turn: r.turnNumber, ToolCallID: toolCallID, ToolName: toolName, Timestamp: nowTS()})
+	return nil
+}
+
+func (r *Runtime) ToolExecutionUpdate(toolCallID, toolName, delta string) error {
+	if r.state != StateRunning && r.state != StateAborting {
+		return fmt.Errorf("invalid_transition: %s -> tool_execution_update", r.state)
+	}
+	if toolCallID == "" || toolName == "" {
+		return fmt.Errorf("invalid_tool_call")
+	}
+	r.emit(Event{Type: EventToolExecutionUpdate, RunID: r.runID, Turn: r.turnNumber, ToolCallID: toolCallID, ToolName: toolName, Delta: delta, Timestamp: nowTS()})
+	return nil
+}
+
+func (r *Runtime) ToolExecutionEnd(toolCallID, toolName string) error {
+	if r.state != StateRunning && r.state != StateAborting {
+		return fmt.Errorf("invalid_transition: %s -> tool_execution_end", r.state)
+	}
+	if toolCallID == "" || toolName == "" {
+		return fmt.Errorf("invalid_tool_call")
+	}
+	r.emit(Event{Type: EventToolExecutionEnd, RunID: r.runID, Turn: r.turnNumber, ToolCallID: toolCallID, ToolName: toolName, Timestamp: nowTS()})
+	return nil
+}
+
 func (r *Runtime) EndRun() error {
 	if r.state != StateRunning && r.state != StateAborting {
 		return fmt.Errorf("invalid_transition: %s -> %s", r.state, StateIdle)
