@@ -9,6 +9,11 @@
 - 协议固定为 `UDS + NDJSON`
 - 实现顺序按 `P0 > P1 > P2`
 
+## Completion Status
+
+- `A1~H3`: completed and gated by `make release-gate`
+- `A0`: environment prerequisite (Ollama install/model pull) depends on local machine state
+
 ---
 
 ## A. 工程初始化（必须先完成）
