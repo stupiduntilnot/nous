@@ -78,6 +78,7 @@ func DefaultTools(cwd string) []core.Tool {
 	return []core.Tool{
 		NewReadTool(cwd),
 		NewLSTool(cwd),
+		NewFindTool(cwd),
 	}
 }
 
