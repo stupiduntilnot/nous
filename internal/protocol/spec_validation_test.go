@@ -56,6 +56,26 @@ func TestProtocolSchemaValidation(t *testing.T) {
 		}
 	}
 
+	ev := schemas["EventEnvelope"].(map[string]any)
+	evAllOf := ev["allOf"].([]any)
+	evProps := evAllOf[1].(map[string]any)["properties"].(map[string]any)
+	evTypes := evProps["type"].(map[string]any)["enum"].([]any)
+	gotEvents := make([]string, 0, len(evTypes))
+	for _, v := range evTypes {
+		gotEvents = append(gotEvents, v.(string))
+	}
+	wantEvents := expectedEvents()
+	for _, w := range wantEvents {
+		if !slices.Contains(gotEvents, w) {
+			t.Fatalf("event enum missing %q", w)
+		}
+	}
+	for _, g := range gotEvents {
+		if !slices.Contains(wantEvents, g) {
+			t.Fatalf("event enum has unknown event %q", g)
+		}
+	}
+
 	resp := schemas["ResponseEnvelope"].(map[string]any)
 	respAllOf := resp["allOf"].([]any)
 	respProps := respAllOf[1].(map[string]any)["properties"].(map[string]any)
@@ -95,6 +115,15 @@ func expectedCommands() []string {
 	out := make([]string, 0, len(validCommands))
 	for cmd := range validCommands {
 		out = append(out, fmt.Sprintf("%s", cmd))
+	}
+	slices.Sort(out)
+	return out
+}
+
+func expectedEvents() []string {
+	out := make([]string, 0, len(validEvents))
+	for ev := range validEvents {
+		out = append(out, fmt.Sprintf("%s", ev))
 	}
 	slices.Sort(out)
 	return out
