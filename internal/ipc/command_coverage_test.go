@@ -39,7 +39,7 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 		{ID: "c-tools", Type: string(protocol.CmdSetActiveTools), Payload: map[string]any{"tools": []any{}}},
 		{ID: "c-new", Type: string(protocol.CmdNewSession), Payload: map[string]any{}},
 		{ID: "c-switch", Type: string(protocol.CmdSwitchSession), Payload: map[string]any{"session_id": parentID}},
-		{ID: "c-branch", Type: string(protocol.CmdBranchSession), Payload: map[string]any{"parent_id": parentID}},
+		{ID: "c-branch", Type: string(protocol.CmdBranchSession), Payload: map[string]any{"session_id": parentID}},
 		{ID: "c-ext", Type: string(protocol.CmdExtensionCmd), Payload: map[string]any{"name": "missing", "payload": map[string]any{}}},
 	}
 

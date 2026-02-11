@@ -131,3 +131,16 @@ func TestRenderResultRendersStatusWarningErrorEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestParseInputBranchUsesSessionID(t *testing.T) {
+	_, payload, _, err := parseInput("branch sess-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, _ := payload["session_id"].(string); got != "sess-1" {
+		t.Fatalf("expected session_id payload, got: %+v", payload)
+	}
+	if _, ok := payload["parent_id"]; ok {
+		t.Fatalf("branch payload should not contain parent_id: %+v", payload)
+	}
+}

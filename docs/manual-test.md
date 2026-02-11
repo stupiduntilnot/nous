@@ -45,7 +45,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt_asyn
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock new
 go run ./cmd/corectl --socket /tmp/pi-core.sock switch <session_id>
-go run ./cmd/corectl --socket /tmp/pi-core.sock branch <parent_session_id>
+go run ./cmd/corectl --socket /tmp/pi-core.sock branch <session_id>
 ```
 
 ## 4. Extension Command Path

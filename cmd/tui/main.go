@@ -129,9 +129,9 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 	case strings.HasPrefix(line, "branch "):
 		id := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
 		if id == "" {
-			return "", nil, false, fmt.Errorf("parent session id is required")
+			return "", nil, false, fmt.Errorf("session id is required")
 		}
-		return string(protocol.CmdBranchSession), map[string]any{"parent_id": id}, false, nil
+		return string(protocol.CmdBranchSession), map[string]any{"session_id": id}, false, nil
 	case strings.HasPrefix(line, "set_active_tools "):
 		rest := strings.TrimSpace(strings.TrimPrefix(line, "set_active_tools "))
 		if rest == "" {
@@ -178,7 +178,7 @@ func printHelp() {
 	fmt.Println("  abort")
 	fmt.Println("  new")
 	fmt.Println("  switch <session_id>")
-	fmt.Println("  branch <parent_session_id>")
+	fmt.Println("  branch <session_id>")
 	fmt.Println("  set_active_tools [tool...]   (no args = clear all)")
 	fmt.Println("  ext <name> [json_payload]")
 	fmt.Println("  status")

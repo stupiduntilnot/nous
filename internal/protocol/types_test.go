@@ -5,7 +5,7 @@ import "testing"
 func TestCommandDecodeValid(t *testing.T) {
 	lines := [][]byte{
 		[]byte(`{"v":"1","id":"req-1","type":"prompt","payload":{"text":"hello"}}`),
-		[]byte(`{"v":"1","id":"req-2","type":"branch_session","payload":{"parent_id":"sess-1"}}`),
+		[]byte(`{"v":"1","id":"req-2","type":"branch_session","payload":{"session_id":"sess-1"}}`),
 	}
 	for _, line := range lines {
 		env, err := DecodeCommand(line)
