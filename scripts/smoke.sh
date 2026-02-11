@@ -30,6 +30,10 @@ fi
 OUT=$(go run ./cmd/corectl --socket "$SOCKET" ping)
 [[ "$OUT" == "pong" ]] || { echo "unexpected ping output: $OUT" >&2; exit 1; }
 
+AUTO_ASYNC_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt_async "hello async auto-session")
+AUTO_ASYNC_SESSION_ID=$(echo "$AUTO_ASYNC_OUT" | rg '"session_id"' | sed -E 's/.*"session_id": "([^"]+)".*/\1/')
+[[ -n "$AUTO_ASYNC_SESSION_ID" ]] || { echo "auto async prompt missing session_id: $AUTO_ASYNC_OUT" >&2; exit 1; }
+
 PROMPT_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt "hello smoke")
 echo "$PROMPT_OUT" | rg -q '"output"' || { echo "prompt output missing: $PROMPT_OUT" >&2; exit 1; }
 
