@@ -31,6 +31,18 @@ func TestProtocolSchemaValidation(t *testing.T) {
 	if xTransport["type"] != "uds" || xTransport["framing"] != "ndjson" {
 		t.Fatalf("x-transport must declare uds + ndjson, got: %#v", xTransport)
 	}
+	reqs, ok := doc["x-command-payload-requirements"].(map[string]any)
+	if !ok {
+		t.Fatalf("x-command-payload-requirements is missing or invalid")
+	}
+	assertRequiredField(t, reqs, "prompt", "text")
+	assertRequiredField(t, reqs, "steer", "text")
+	assertRequiredField(t, reqs, "follow_up", "text")
+	assertRequiredField(t, reqs, "set_active_tools", "tools")
+	assertRequiredField(t, reqs, "switch_session", "session_id")
+	assertRequiredField(t, reqs, "branch_session", "session_id")
+	assertRequiredField(t, reqs, "extension_command", "name")
+	assertNotRequiredField(t, reqs, "branch_session", "parent_id")
 
 	components := doc["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
@@ -127,4 +139,36 @@ func expectedEvents() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+func assertRequiredField(t *testing.T, reqs map[string]any, cmd, field string) {
+	t.Helper()
+	raw, ok := reqs[cmd].([]any)
+	if !ok {
+		t.Fatalf("payload requirements missing command %q", cmd)
+	}
+	fields := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, _ := v.(string)
+		fields = append(fields, s)
+	}
+	if !slices.Contains(fields, field) {
+		t.Fatalf("payload requirements for %q missing field %q", cmd, field)
+	}
+}
+
+func assertNotRequiredField(t *testing.T, reqs map[string]any, cmd, field string) {
+	t.Helper()
+	raw, ok := reqs[cmd].([]any)
+	if !ok {
+		t.Fatalf("payload requirements missing command %q", cmd)
+	}
+	fields := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, _ := v.(string)
+		fields = append(fields, s)
+	}
+	if slices.Contains(fields, field) {
+		t.Fatalf("payload requirements for %q should not contain %q", cmd, field)
+	}
 }

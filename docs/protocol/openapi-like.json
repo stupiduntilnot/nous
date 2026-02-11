@@ -9,6 +9,18 @@
     "type": "uds",
     "framing": "ndjson"
   },
+  "x-command-payload-requirements": {
+    "ping": [],
+    "prompt": ["text"],
+    "steer": ["text"],
+    "follow_up": ["text"],
+    "abort": [],
+    "set_active_tools": ["tools"],
+    "new_session": [],
+    "switch_session": ["session_id"],
+    "branch_session": ["session_id"],
+    "extension_command": ["name"]
+  },
   "paths": {
     "/command": {
       "post": {
