@@ -66,6 +66,7 @@ require_test ./internal/protocol TestDevPlanMentionsTUIEvidenceArtifactCommand
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
 require_test ./internal/protocol TestProtocolExamplesResponsesNDJSON
 require_test ./internal/protocol TestResponseExamplesCoveredByResponseRequirements
+require_test ./internal/protocol TestResponseRequirementsHaveSuccessExamples
 require_test ./cmd/tui TestRenderResultRendersStatusWarningErrorEvents
 
 echo "[gate] run targeted phase checks"
