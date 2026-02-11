@@ -48,6 +48,7 @@ require_test ./internal/core TestPromptEmitsErrorEventOnProviderError
 require_test ./internal/core TestCommandLoopSteerPreemptsFollowUps
 require_test ./internal/ipc TestCorePingPong
 require_test ./internal/ipc TestSteerPreemptsFollowUpOverIPC
+require_test ./internal/ipc TestAsyncPromptAutoCreatesSessionAndReturnsSessionID
 require_test ./internal/protocol TestProtocolSchemaValidation
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
 require_test ./cmd/tui TestRenderResultRendersStatusWarningErrorEvents
