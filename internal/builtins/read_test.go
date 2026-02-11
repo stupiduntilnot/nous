@@ -91,6 +91,30 @@ func TestReadToolRejectsInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestReadToolAcceptsPathAliases(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "a.txt"), "hello")
+	tool := NewReadTool(dir)
+
+	cases := []map[string]any{
+		{"file_path": "a.txt"},
+		{"filepath": "a.txt"},
+		{"file": "a.txt"},
+		{"target_path": "a.txt"},
+		{"file": map[string]any{"path": "a.txt"}},
+		{"path": []any{"a.txt"}},
+	}
+	for i, args := range cases {
+		out, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatalf("case %d expected success, got err: %v", i, err)
+		}
+		if out != "hello" {
+			t.Fatalf("case %d unexpected output: %q", i, out)
+		}
+	}
+}
+
 type readToolCallProvider struct{}
 
 func (readToolCallProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {

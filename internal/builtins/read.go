@@ -24,8 +24,7 @@ func NewReadTool(cwd string) core.Tool {
 	return core.ToolFunc{
 		ToolName: "read",
 		Run: func(_ context.Context, args map[string]any) (string, error) {
-			rawPath, _ := args["path"].(string)
-			rawPath = strings.TrimSpace(rawPath)
+			rawPath := resolveReadPathArg(args)
 			if rawPath == "" {
 				return "", fmt.Errorf("read_invalid_path")
 			}
@@ -72,6 +71,36 @@ func NewReadTool(cwd string) core.Tool {
 			return strings.Join(lines[offset:end], "\n"), nil
 		},
 	}
+}
+
+func resolveReadPathArg(args map[string]any) string {
+	keys := []string{"path", "file_path", "filepath", "file", "target_path"}
+	for _, key := range keys {
+		v, ok := args[key]
+		if !ok {
+			continue
+		}
+		if s := normalizeReadPathValue(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func normalizeReadPathValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case map[string]any:
+		if p, ok := x["path"]; ok {
+			return normalizeReadPathValue(p)
+		}
+	case []any:
+		if len(x) > 0 {
+			return normalizeReadPathValue(x[0])
+		}
+	}
+	return ""
 }
 
 func DefaultTools(cwd string) []core.Tool {
