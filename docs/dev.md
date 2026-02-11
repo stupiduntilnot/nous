@@ -1,446 +1,258 @@
-# Go 版 Pi Agent 开发分解（可执行步骤清单）
+# Go 版 Pi Agent 开发计划（开发 + 验收一体）
 
-本文按 `docs/req.md` 拆解为最小可执行步骤。  
-目标：每一步都可以独立完成、独立测试、独立验收。
-逐步骤验收细则见 `docs/acceptance.md`（该文档为验收主文档）。
+本文是唯一执行文档：每个步骤都包含两部分。
+1. `任务`：要实现什么
+2. `验收`：如何判定完成（命令/测试/人工检查）
 
----
-
-## 0. 联通性 MVP（进入 P0 前）
-
-### 0.1 实现最小 Core（仅 ping-pong）
-- 任务：
-  - 启动 UDS server
-  - 支持最小命令：`ping`
-  - 返回最小响应：`pong`
-- 完成标准：
-  - Core 在无业务逻辑情况下可稳定收发 NDJSON 消息
-- 验证：
-  - 集成测试：发送 `ping`，收到 `pong`
-
-### 0.2 实现最小 CLI client（非 TUI）
-- 任务：
-  - 通过 UDS 连接 Core
-  - 发送单条 NDJSON 命令并输出响应
-- 完成标准：
-  - 命令行可直接完成 ping-pong
-- 验证：
-  - 手工：`corectl ping` 输出 `pong`
-  - 黑盒：CI 中跑一条 ping-pong 测试
-
-### 0.3 实现最小 TUI MVP（只为联调）
-- 任务：
-  - 单输入框 + 单日志区
-  - 支持发送 `ping`，展示 `pong`
-  - 支持显示连接状态（connected/disconnected）
-- 完成标准：
-  - TUI 能通过 UDS 与 Core 完成最小交互闭环
-- 验证：
-  - 手工测试：输入 ping，界面看到 pong
-
-### 0.4 0 阶段门禁
-- 完成标准：
-  - Core + CLI + TUI 三者均通过 ping-pong
-  - 协议与 transport 的基本稳定性已验证
-- 验证：
-  - `go test ./...` 通过
-  - 最小联调脚本通过
+当前原则：
+- 先工程初始化，再做联通原型，再做 Core 主能力
+- 协议固定为 `UDS + NDJSON`
+- 实现顺序按 `P0 > P1 > P2`
 
 ---
 
-## A. 项目骨架与工程约束
+## A. 工程初始化（必须先完成）
 
-### A1. 初始化 Go 工程与目录结构
+### A1. 初始化 Go module 与目录结构
 - 任务：
-  - 创建模块（`go mod init`）
-  - 建立目录：`cmd/`, `internal/core/`, `internal/ipc/`, `internal/tui/`, `internal/provider/`, `internal/session/`, `internal/extension/`, `pkg/protocol/`
-- 完成标准：
-  - 代码可编译，空程序可运行
-- 验证：
-  - `go test ./...`
-  - `go build ./...`
+  - 初始化 `go.mod`
+  - 创建目录：
+    - `cmd/core`
+    - `internal/core`
+    - `internal/ipc`
+    - `internal/protocol`
+    - `internal/session`
+    - `internal/extension`
+    - `internal/provider`
+    - `internal/tui`
+- 验收：
+  - `go env GOMOD` 指向当前项目 `go.mod`
+  - `go build ./...` 通过
+  - `go test ./...` 可运行（即使暂无测试）
 
-### A2. 建立统一 lint/test 脚本
+### A2. 建立统一命令入口
 - 任务：
-  - 增加 `Makefile` 或脚本：`test`, `lint`, `build`
-  - 接入 `go vet`（可选再加 `staticcheck`）
-- 完成标准：
-  - 一条命令可跑全量检查
-- 验证：
-  - `make test`
-  - `make lint`
+  - 增加 `Makefile`（至少 `build/test/lint`）
+  - 接入 `go vet`
+- 验收：
+  - `make build` 成功
+  - `make test` 成功
+  - `make lint` 成功
 
-### A3. 定义错误码与日志规范
+### A3. 定义错误与日志基本规范
 - 任务：
-  - 统一错误类型（含 code/message/cause）
-  - 统一结构化日志字段（run_id/turn_id/message_id/tool_call_id）
-- 完成标准：
-  - 核心模块输出结构化日志
-- 验证：
-  - 单测校验错误序列化
-  - 手动运行检查日志字段是否齐全
+  - 统一错误结构（`code/message/cause`）
+  - 统一日志上下文字段（`run_id/turn_id/message_id/tool_call_id`）
+- 验收：
+  - 最少 1 个单测覆盖错误序列化
+  - 运行最小程序时日志字段可见
 
 ---
 
-## B. 协议与模型（先定契约）
+## B. 协议定义（先定契约再写逻辑）
 
-### B0. 固化协议决策（ADR）
+### B1. 固化协议 ADR（UDS + NDJSON）
 - 任务：
-  - 记录并冻结两项决策：
-    - transport：仅 `UDS`
-    - wire protocol：`NDJSON`
-  - 明确本期不实现 `stdio` transport
-- 完成标准：
-  - ADR/文档落地，团队对协议无歧义
-- 验证：
-  - 文档审查通过（`docs/req.md` 与 `dev.md` 一致）
+  - 在文档中明确：
+    - transport 仅 `UDS`
+    - wire protocol 为 `NDJSON`（一行一个 JSON）
+    - 本期不实现 `stdio`
+- 验收：
+  - `docs/req.md` 与本文一致，无冲突描述
 
-### B0.5 产出 OpenAPI 风格协议规范（语义对齐 pi-mono）
+### B2. 产出 OpenAPI 风格协议规范（语义对齐 pi-mono）
 - 任务：
-  - 新增协议规范文档（JSON/YAML 均可），采用 OpenAPI 风格描述命令、响应、事件结构
-  - 在规范中明确：wire framing 为 NDJSON（一行一个 JSON message）
-  - 建立“语义对齐矩阵”：逐项映射 `pi-mono` 的命令/响应/事件语义（尤其是 `prompt/steer/follow_up/abort` 与生命周期事件）
-  - 明确本项目对 `pi-mono` 的兼容边界（哪些是完全一致，哪些是显式差异）
-- 完成标准：
-  - 规范文件可被机器读取（schema 可用于校验）
-  - 对齐矩阵完整覆盖本期协议面
-- 验证：
-  - 协议校验测试：使用规范校验命令/响应/事件样例
-  - 兼容性测试：回放 `pi-mono` 语义样例，断言本项目输出事件序列与预期一致
+  - 新增协议规范文件（YAML/JSON）
+  - 定义命令/响应/事件 schema
+  - 编写语义对齐矩阵：逐项映射 `pi-mono` 语义
+  - 标记差异边界（若有）
+- 验收：
+  - 存在可机器读取规范文件
+  - 存在对齐矩阵
+  - 协议样例可通过 schema 校验测试
+  - 语义兼容测试通过（样例回放事件序列一致）
 
-### B1. 定义命令协议（IPC 入站）
+### B3. 定义命令与事件最小集合
 - 任务：
-  - 定义命令：`prompt`, `steer`, `follow_up`, `abort`, `set_active_tools`, `new_session`, `switch_session`
-  - 每个命令含 `request_id`
-- 完成标准：
-  - 命令 JSON 能反序列化并通过 schema 校验
-- 验证：
-  - 协议单测（合法/非法 payload）
-
-### B2. 定义事件协议（IPC 出站）
-- 任务：
-  - 定义事件：
+  - 命令：`ping`, `prompt`, `steer`, `follow_up`, `abort`, `set_active_tools`, `new_session`, `switch_session`
+  - 事件：
     - `agent_start/agent_end`
     - `turn_start/turn_end`
     - `message_start/message_update/message_end`
     - `tool_execution_start/tool_execution_update/tool_execution_end`
-    - `error/warning/status`
-  - 添加版本字段 `protocol_version`
-- 完成标准：
-  - 所有事件可稳定序列化
-- 验证：
-  - Golden tests 校验 JSON 输出
-
-### B3. 定义消息模型
-- 任务：
-  - `UserMessage`, `AssistantMessage`, `ToolResultMessage`
-  - `AssistantMessage` 支持 `text/thinking/toolCall`
-- 完成标准：
-  - 模型可用于持久化和回放
-- 验证：
-  - 序列化/反序列化单测
-
-### B4. 定义 Tool 模型
-- 任务：
-  - `tool registry` 与 `active tools` 分离
-  - Tool 输入输出、详情结构统一
-- 完成标准：
-  - 可以注册、查询、激活、禁用工具
-- 验证：
-  - 单测覆盖：
-    - 注册冲突
-    - 激活不存在工具
-    - active 集合切换
+    - `status/warning/error`
+  - 所有消息包含版本字段与请求关联字段
+- 验收：
+  - 协议单测：
+    - 合法 payload 可解析
+    - 非法 payload 返回标准错误
+  - 事件 Golden tests 通过
 
 ---
 
-## C. Core 状态机（P0 核心）
+## C. 联通性 MVP（在 Core 复杂功能前完成）
 
-### C1. 实现 Run/Turn 状态机骨架（单写者）
+### C1. 最小 Core：UDS + NDJSON + ping/pong
 - 任务：
-  - 单 goroutine 主循环
-  - 状态：idle/running/aborting
-  - Run 生命周期事件
-- 完成标准：
-  - 能触发 `agent_start -> agent_end`
-- 验证：
-  - 状态机单测（合法/非法状态迁移）
+  - Core 监听 UDS 路径
+  - 收到 `ping` 返回 `pong`
+- 验收：
+  - 集成测试：`TestCorePingPong`
+  - 手工：`echo '{"id":"1","type":"ping"}' | nc -U /tmp/pi-core.sock`
 
-### C2. 实现消息生命周期事件
+### C2. 最小 CLI client（非 TUI）
 - 任务：
-  - 用户消息事件：`message_start/end`
-  - 助手消息事件：`start/update/end`
-- 完成标准：
-  - 事件顺序稳定、可预测
-- 验证：
-  - 顺序断言单测（事件数组精确比对）
+  - 实现 `corectl ping --socket <path>`
+- 验收：
+  - 黑盒测试：`TestCorectlPing`
+  - 手工：命令行输出 `pong`
 
-### C3. 接入 ProviderAdapter 接口（先 mock）
+### C3. 最小 TUI MVP（仅联调）
 - 任务：
-  - 抽象 `Stream(ctx, context) -> event stream`
-  - 先做 fake provider，输出固定 text/toolcall
-- 完成标准：
-  - 不依赖外部 API 也能跑通 loop
-- 验证：
-  - E2E 单测：`prompt -> assistant text`
+  - 一个输入框 + 一个日志区域
+  - 输入 `ping`，显示 `pong`
+  - 显示连接状态
+- 验收：
+  - 人工联调通过（Core+TUI）
+  - 保留截图或录屏作为验收证据
 
-### C4. 实现 Tool 顺序执行循环
+### C4. 联通阶段门禁
 - 任务：
-  - 读取 assistant 内 tool calls
-  - 顺序执行
-  - 发出 tool execution 三段事件
-- 完成标准：
-  - `ToolResultMessage` 回灌后进入下一 Turn
-- 验证：
-  - E2E 单测：`prompt -> toolcall -> toolResult -> second turn`
-
-### C5. 实现 `steer` 队列语义
-- 任务：
-  - 运行中可插入 steer
-  - 在 tool 边界投递
-  - 插入后可中断剩余 tool（按当前需求）
-- 完成标准：
-  - steer 能生效并改变后续行为
-- 验证：
-  - 并发测试：运行中发送 steer，断言事件序列与结果
-
-### C6. 实现 `followUp` 队列语义
-- 任务：
-  - 当前 run 即将结束时投递 follow_up
-- 完成标准：
-  - follow_up 不打断当前流程
-- 验证：
-  - 单测断言 follow_up 在 run 尾部触发下一轮
-
-### C7. 实现 `abort` 语义与取消传播
-- 任务：
-  - `context.Context` 贯穿 provider/tool
-  - abort 后状态回到 idle
-- 完成标准：
-  - abort 后不再有新工具执行
-- 验证：
-  - 超时/取消测试，断言停止原因与事件
-
-### C8. 实现 active tools 动态切换
-- 任务：
-  - 命令可更新 active tool 集
-  - 下一次模型请求仅发送 active 集
-- 完成标准：
-  - 模型请求工具列表可观测
-- 验证：
-  - 单测检查请求 payload tools 集合
-
----
-
-## D. Session 持久化与恢复（P0 核心）
-
-### D1. 定义 Session 文件格式（JSONL）
-- 任务：
-  - 头部 + entry
-  - entry 含 `id/parent_id/timestamp/type`
-- 完成标准：
-  - 文件可 append，可读取
-- 验证：
-  - 文件读写单测
-
-### D2. 实现追加写与崩溃恢复
-- 任务：
-  - append-only
-  - 对坏行容错（跳过非法行）
-- 完成标准：
-  - 中断后可恢复最近有效状态
-- 验证：
-  - 故障注入测试（截断/损坏行）
-
-### D3. 实现会话恢复与切换
-- 任务：
-  - `new_session`
-  - `switch_session`
-- 完成标准：
-  - 可恢复消息上下文并继续运行
-- 验证：
-  - E2E：首轮写入 -> 重启 -> 继续 prompt
-
-### D4. 实现基本分支能力（最小）
-- 任务：
-  - 基于 `parent_id` 继续新分支
-- 完成标准：
-  - 可以从历史节点继续对话
-- 验证：
-  - 单测构造树并验证上下文构建
-
----
-
-## E. Extension MVP（P0 范围内最小闭环）
-
-### E1. 定义 Extension 接口
-- 任务：
-  - 注册 Tool
-  - 注册 Command
-  - 注册 Hook：`input/tool_call/tool_result/turn_end`
-- 完成标准：
-  - 可加载一个内置 demo extension
-- 验证：
-  - 单测：hook 被调用且可修改行为
-
-### E2. 实现 input hook（transform/handled）
-- 任务：
-  - 支持输入改写和短路处理
-- 完成标准：
-  - 输入可被 extension 改写
-- 验证：
-  - 单测断言改写后 message 内容
-
-### E3. 实现 tool_call/tool_result hook
-- 任务：
-  - tool_call 可拦截（可拒绝）
-  - tool_result 可改写结果
-- 完成标准：
-  - 可实现策略控制（如 denylist）
-- 验证：
-  - 单测覆盖 block/transform 两路径
-
----
-
-## F. IPC 层（P1）
-
-### F1. 实现 UDS transport（NDJSON framing）
-- 任务：
-  - 使用 Unix Domain Socket 建立命令/事件双向消息流
-  - 采用按行读取 NDJSON 作为消息边界
-  - 请求响应关联 `request_id`
-- 完成标准：
-  - 外部进程可控制 core
-- 验证：
-  - 集成测试：通过 UDS 发送 NDJSON 命令并读取事件流
-  - 手工调试：`nc -U /tmp/<socket>.sock`
-
-### F2. 实现超时与错误响应规范
-- 任务：
-  - 命令级 timeout
-  - 标准错误返回
-- 完成标准：
-  - 调用方可稳定处理失败
-- 验证：
-  - 超时测试、非法命令测试
-
-### F3. 实现 Headless 运行入口
-- 任务：
-  - `cmd/core` 启动 headless server
-- 完成标准：
-  - 无 TUI 可独立运行
-- 验证：
-  - 黑盒测试：启动进程 + UDS/NDJSON 命令驱动
-
----
-
-## G. 最小 TUI（P2）
-
-### G1. 选型并接入第三方 TUI 库
-- 任务：
-  - 确定库（如 bubbletea/tcell 等）
-  - 仅实现最小输入输出面板
-- 完成标准：
-  - TUI 能连通 IPC
-- 验证：
-  - 手工测试：发送 prompt，看到事件与结果
-
-### G2. 事件渲染最小闭环
-- 任务：
-  - 渲染 message/tool/状态
-  - 支持输入 `prompt/steer/follow_up/abort`
-- 完成标准：
-  - 可观察完整 agent run
-- 验证：
-  - 手工测试脚本 + 截图/录屏验收
-
-### G3. 会话操作最小闭环
-- 任务：
-  - 新建/切换 session
-- 完成标准：
-  - 前端可控制 session 生命周期
-- 验证：
-  - 手工测试：切换后上下文变化正确
-
----
-
-## H. Provider 最小接入
-
-### H1. 实现一个最小可用 provider
-- 任务：
-  - 接入一个 API（优先易测）
-  - 映射统一 assistant 事件
-- 完成标准：
-  - 真实 API 下可跑通 tool call 回路
-- 验证：
-  - 集成测试（可用 mock + 可选真实 key）
-
-### H2. Provider 能力差异处理（最小）
-- 任务：
-  - 不支持能力时返回标准错误
-- 完成标准：
-  - 不发生 panic/不一致状态
-- 验证：
-  - 异常路径单测
-
----
-
-## I. 端到端验收场景（与需求文档对齐）
-
-### I1. 标准链路验收
-- 场景：
-  - `prompt -> tool call -> tool result -> final answer`
-- 验证：
-  - 自动化 E2E 测试通过
-
-### I2. steer/followUp 验收
-- 场景：
-  - 运行中 steer 纠偏
-  - follow_up 排队执行
-- 验证：
-  - 事件顺序与最终输出符合预期
-
-### I3. Session 恢复验收
-- 场景：
-  - 退出后重启恢复会话继续执行
-- 验证：
-  - 上下文与历史一致
-
-### I4. Headless 验收
-- 场景：
-  - 无 TUI 进程下通过 IPC 完成完整 run
-- 验证：
-  - 黑盒脚本通过
-
----
-
-## J. 每阶段交付物清单
-
-### J1. Phase 1（Core）
-- 交付：
-  - 状态机、消息模型、顺序 tool loop、session、extension MVP
-- 门禁：
+  - 汇总 C1~C3
+- 验收：
   - `go test ./...` 全绿
-  - 核心 E2E（无 UI）全绿
-
-### J2. Phase 2（IPC + TUI）
-- 交付：
-  - IPC 协议实现、最小 TUI
-- 门禁：
-  - Headless 黑盒测试通过
-  - 手工链路验证通过
-
-### J3. Phase 3（增强）
-- 交付：
-  - active tools 策略增强、扩展生态增强
-- 门禁：
-  - 回归测试通过
+  - Core + CLI + TUI 都能完成 ping-pong
 
 ---
 
-## K. 执行约束（防偏航）
+## D. Core P0：状态机与运行语义
 
-1. 不提前做 DAG 并发调度。
-2. 不提前做复杂 UI。
-3. 任何新能力优先走 extension/config 注入，不硬编码到 core。
-4. 每完成一个步骤，必须补对应测试或验收脚本。
+### D1. Run/Turn 状态机骨架（单写者）
+- 任务：
+  - 主循环单 goroutine 推进状态
+  - 状态最小集：`idle/running/aborting`
+- 验收：
+  - 状态迁移单测通过（合法与非法路径）
+
+### D2. 消息生命周期事件
+- 任务：
+  - 实现 `message_start/update/end`（assistant 支持 update）
+- 验收：
+  - 事件顺序断言测试通过
+
+### D3. ProviderAdapter mock 接入
+- 任务：
+  - 先接入 fake provider，支持返回文本与 tool call
+- 验收：
+  - 不依赖真实 API 的 E2E 可跑通一轮
+
+### D4. 顺序 Tool loop
+- 任务：
+  - 读取 assistant tool calls 并顺序执行
+  - 回灌 `ToolResultMessage` 后进入下一 turn
+- 验收：
+  - E2E：`prompt -> toolcall -> toolresult -> next turn` 通过
+
+### D5. steer / follow_up / abort 语义
+- 任务：
+  - `steer`：中途纠偏
+  - `follow_up`：尾部排队
+  - `abort`：取消传播与状态复位
+- 验收：
+  - 三类语义各有单测
+  - 并发情境下无顺序漂移
+
+### D6. active tools 机制
+- 任务：
+  - 分离 `tool registry` 与 `active tools`
+  - 模型请求只发送 active 集
+- 验收：
+  - 单测验证 payload 工具集合准确
+
+---
+
+## E. Core P0：Session 与 Extension
+
+### E1. Session JSONL 与恢复
+- 任务：
+  - append-only 持久化
+  - 损坏行容错恢复
+  - `new_session/switch_session`
+- 验收：
+  - 文件读写/恢复/切换测试通过
+
+### E2. Session 分支最小能力
+- 任务：
+  - 基于 `id/parent_id` 支持从历史继续
+- 验收：
+  - 分支上下文构建测试通过
+
+### E3. Extension MVP
+- 任务：
+  - 支持注册 Tool/Command/Hook
+  - 必须支持 hooks：`input/tool_call/tool_result/turn_end`
+- 验收：
+  - 注册与调用测试通过
+  - `input transform/handled` 测试通过
+  - `tool_call block`、`tool_result mutate` 测试通过
+
+---
+
+## F. P1：IPC 层完善
+
+### F1. UDS 命令-响应链路
+- 任务：
+  - request_id 关联
+  - 错误返回标准化
+- 验收：
+  - UDS 集成测试通过
+
+### F2. timeout 与异常处理
+- 任务：
+  - 命令级超时
+  - 非法命令/内部错误稳定返回
+- 验收：
+  - timeout 与错误路径单测通过
+
+### F3. Headless 启动入口
+- 任务：
+  - 可独立运行 Core（无 TUI）
+- 验收：
+  - 黑盒进程测试通过
+
+---
+
+## G. P2：最小 TUI（仅验证 Core）
+
+### G1. 事件渲染最小闭环
+- 任务：
+  - 展示 message/tool/status
+  - 输入支持 `prompt/steer/follow_up/abort`
+- 验收：
+  - 人工场景脚本逐项通过
+
+### G2. 会话操作最小闭环
+- 任务：
+  - 支持新建/切换会话
+- 验收：
+  - 人工验证 + 日志验证通过
+
+---
+
+## H. 阶段门禁（发布前检查）
+
+### H1. Phase 1（Core）
+- 验收：
+  - D + E 全部通过
+  - `go test ./...` 通过
+
+### H2. Phase 2（IPC + TUI）
+- 验收：
+  - F + G 全部通过
+  - UDS 联调脚本通过
+
+### H3. 回归门禁
+- 验收：
+  - 全量回归通过
+  - 文档与实现一致（协议无漂移）
+
