@@ -1,7 +1,10 @@
 .PHONY: build test lint ci release-gate phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
 
 build:
-	go build ./...
+	mkdir -p bin
+	go build -o bin/core ./cmd/core
+	go build -o bin/corectl ./cmd/corectl
+	go build -o bin/tui ./cmd/tui
 
 test:
 	./scripts/phase-gate.sh
