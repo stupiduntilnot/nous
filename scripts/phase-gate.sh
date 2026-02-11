@@ -58,6 +58,8 @@ require_test ./internal/ipc TestDispatchAcceptsProtocolCommandExamplePayloadShap
 require_test ./internal/ipc TestDispatchResponsesSatisfySpecPayloadRequirements
 require_test ./internal/protocol TestProtocolSchemaValidation
 require_test ./internal/protocol TestCommandPayloadRequirementsCoverAllCommands
+require_test ./internal/protocol TestDevPlanListsAllProtocolCommandsAndEvents
+require_test ./internal/protocol TestDevPlanMentionsTUIEvidenceArtifactCommand
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
 require_test ./internal/protocol TestProtocolExamplesResponsesNDJSON
 require_test ./internal/protocol TestResponseExamplesCoveredByResponseRequirements
