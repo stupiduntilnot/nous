@@ -2,15 +2,19 @@ package ipc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"oh-my-agent/internal/core"
 	"oh-my-agent/internal/provider"
 	"oh-my-agent/internal/protocol"
+	"oh-my-agent/internal/session"
 )
 
 type blockingExecutor struct {
@@ -29,6 +33,25 @@ func (b *blockingExecutor) Prompt(ctx context.Context, _ string, _ string) (stri
 	case <-b.release:
 		return "ok", nil
 	}
+}
+
+type echoPromptAdapter struct{}
+
+func (e *echoPromptAdapter) Stream(ctx context.Context, req provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 3)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			out <- provider.Event{Type: provider.EventError, Err: ctx.Err()}
+			return
+		default:
+		}
+		out <- provider.Event{Type: provider.EventStart}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: req.Prompt}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
 }
 
 func TestCorectlPing(t *testing.T) {
@@ -322,9 +345,116 @@ func TestPromptWaitReturnsEvents(t *testing.T) {
 	if _, ok := resp.Payload["output"].(string); !ok {
 		t.Fatalf("expected output in payload")
 	}
+	if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+		t.Fatalf("expected session_id in payload")
+	}
 	rawEvents, ok := resp.Payload["events"].([]any)
 	if !ok || len(rawEvents) == 0 {
 		t.Fatalf("expected non-empty events payload, got: %#v", resp.Payload["events"])
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestPromptWaitPersistsSessionRecords(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "persist-1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello session", "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("prompt wait failed: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected successful response: %+v", resp)
+	}
+	sessionID, _ := resp.Payload["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("missing session_id: %+v", resp.Payload)
+	}
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	records, skipped, err := mgr.Recover(sessionID)
+	if err != nil {
+		t.Fatalf("recover failed: %v", err)
+	}
+	if skipped != 0 {
+		t.Fatalf("expected no skipped records, got %d", skipped)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 message records, got %d", len(records))
+	}
+
+	var first map[string]any
+	if err := json.Unmarshal(records[0], &first); err != nil {
+		t.Fatalf("decode first record failed: %v", err)
+	}
+	if first["role"] != "user" {
+		t.Fatalf("expected first record role=user, got %v", first["role"])
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestPromptWaitIncludesPriorSessionContext(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+	srv.engine = core.NewEngine(core.NewRuntime(), &echoPromptAdapter{})
+	srv.loop = core.NewCommandLoop(srv.engine)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	first, err := SendCommand(socket, protocol.Envelope{
+		ID:      "ctx-1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "first question", "wait": true},
+	})
+	if err != nil || !first.OK {
+		t.Fatalf("first prompt failed: resp=%+v err=%v", first, err)
+	}
+
+	second, err := SendCommand(socket, protocol.Envelope{
+		ID:      "ctx-2",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "second question", "wait": true},
+	})
+	if err != nil || !second.OK {
+		t.Fatalf("second prompt failed: resp=%+v err=%v", second, err)
+	}
+	out, _ := second.Payload["output"].(string)
+	if !strings.Contains(out, "user: first question") {
+		t.Fatalf("expected output prompt to include prior context, got: %s", out)
+	}
+	if !strings.Contains(out, "assistant:") {
+		t.Fatalf("expected output prompt to include assistant context, got: %s", out)
 	}
 
 	cancel()
@@ -431,4 +561,14 @@ func testSocketPath(t *testing.T) string {
 	path := fmt.Sprintf("/tmp/oma-%d.sock", time.Now().UnixNano())
 	t.Cleanup(func() { _ = os.Remove(path) })
 	return path
+}
+
+func testWorkDir(t *testing.T) string {
+	t.Helper()
+	dir := fmt.Sprintf("/tmp/oma-%d", time.Now().UnixNano())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir workdir failed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

@@ -100,6 +100,12 @@ go run ./cmd/core \
 go run ./cmd/corectl --socket /tmp/pi-core.sock prompt "用一句话介绍你自己"
 ```
 
+或者直接跑本地链路验收脚本：
+
+```bash
+make e2e-local
+```
+
 ## 5. 什么时候需要真实云 API Key
 
 只有在以下场景才必须提供云 key：

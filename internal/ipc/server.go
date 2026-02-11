@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,15 @@ type Server struct {
 	timeout    time.Duration
 
 	dispatchOverride func(protocol.Envelope) protocol.ResponseEnvelope
+}
+
+type sessionMessageRecord struct {
+	Type      string `json:"type"`
+	Role      string `json:"role"`
+	Text      string `json:"text"`
+	RunID     string `json:"run_id,omitempty"`
+	TurnKind  string `json:"turn_kind,omitempty"`
+	CreatedAt string `json:"created_at"`
 }
 
 func NewServer(socketPath string) *Server {
@@ -61,6 +71,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	if s.loop == nil {
 		s.loop = core.NewCommandLoop(s.engine)
 	}
+	s.loop.SetOnTurnEnd(func(r core.TurnResult) {
+		_ = s.appendTurnRecord(r.RunID, string(r.Kind), r.Input, r.Output)
+	})
 	_ = os.Remove(s.socketPath)
 
 	ln, err := net.Listen("unix", s.socketPath)
@@ -260,6 +273,15 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 }
 
 func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
+	sessionID, err := s.ensureActiveSession()
+	if err != nil {
+		return responseErr(reqID, "session_error", err.Error())
+	}
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text)
+	if err != nil {
+		return responseErr(reqID, "session_error", err.Error())
+	}
+
 	events := make([]core.Event, 0, 16)
 	unsub := s.engine.Subscribe(func(ev core.Event) {
 		events = append(events, ev)
@@ -267,19 +289,97 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 	defer unsub()
 
 	runID := fmt.Sprintf("sync-%d", time.Now().UnixNano())
-	out, err := s.engine.Prompt(context.Background(), runID, text)
+	out, err := s.engine.Prompt(context.Background(), runID, promptWithContext)
 	if err != nil {
 		return responseErr(reqID, "provider_error", err.Error())
+	}
+	if err := s.appendTurnRecord(runID, string(core.TurnPrompt), text, out); err != nil {
+		return responseErr(reqID, "session_error", err.Error())
 	}
 	return responseOK(protocol.Envelope{
 		V:    protocol.Version,
 		ID:   reqID,
 		Type: "result",
 		Payload: map[string]any{
-			"output": out,
-			"events": events,
+			"output":     out,
+			"events":     events,
+			"session_id": sessionID,
 		},
 	})
+}
+
+func (s *Server) ensureActiveSession() (string, error) {
+	if s.sessions == nil {
+		return "", fmt.Errorf("session_manager_not_ready")
+	}
+	if id := s.sessions.ActiveSession(); id != "" {
+		return id, nil
+	}
+	return s.sessions.NewSession()
+}
+
+func (s *Server) appendTurnRecord(runID, kind, input, output string) error {
+	_, err := s.ensureActiveSession()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := s.sessions.Append(sessionMessageRecord{
+		Type:      "message",
+		Role:      "user",
+		Text:      input,
+		RunID:     runID,
+		TurnKind:  kind,
+		CreatedAt: now,
+	}); err != nil {
+		return err
+	}
+	return s.sessions.Append(sessionMessageRecord{
+		Type:      "message",
+		Role:      "assistant",
+		Text:      output,
+		RunID:     runID,
+		TurnKind:  kind,
+		CreatedAt: now,
+	})
+}
+
+func (s *Server) promptWithSessionContext(sessionID, prompt string) (string, error) {
+	records, err := s.sessions.BuildContext(sessionID)
+	if err != nil {
+		return "", err
+	}
+	if len(records) == 0 {
+		return prompt, nil
+	}
+
+	lines := make([]string, 0, len(records))
+	for _, raw := range records {
+		var rec sessionMessageRecord
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			continue
+		}
+		if rec.Type != "message" || rec.Role == "" || strings.TrimSpace(rec.Text) == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", rec.Role, rec.Text))
+	}
+	if len(lines) == 0 {
+		return prompt, nil
+	}
+	if len(lines) > 20 {
+		lines = lines[len(lines)-20:]
+	}
+
+	var b strings.Builder
+	b.WriteString("Conversation so far:\n")
+	for _, line := range lines {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	b.WriteString("user: ")
+	b.WriteString(prompt)
+	return b.String(), nil
 }
 
 func responseOK(env protocol.Envelope) protocol.ResponseEnvelope {
