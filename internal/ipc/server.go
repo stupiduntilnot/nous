@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"oh-my-agent/internal/core"
 	"oh-my-agent/internal/provider"
@@ -24,10 +25,13 @@ type Server struct {
 	sessions   *session.Manager
 	engine     *core.Engine
 	loop       *core.CommandLoop
+	timeout    time.Duration
+
+	dispatchOverride func(protocol.Envelope) protocol.ResponseEnvelope
 }
 
 func NewServer(socketPath string) *Server {
-	return &Server{socketPath: socketPath}
+	return &Server{socketPath: socketPath, timeout: 3 * time.Second}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -104,113 +108,116 @@ func (s *Server) handleConn(conn net.Conn) {
 			continue
 		}
 
-		switch protocol.CommandType(env.Type) {
+		respCh := make(chan protocol.ResponseEnvelope, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					respCh <- protocol.ResponseEnvelope{
+						Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
+						OK:       false,
+						Error:    &protocol.ErrorBody{Code: "internal_error", Message: fmt.Sprintf("panic: %v", r)},
+					}
+				}
+			}()
+			respCh <- s.dispatch(env)
+		}()
+
+		select {
+		case resp := <-respCh:
+			_ = writeResponse(conn, resp)
+		case <-time.After(s.timeout):
+			_ = writeError(conn, env.ID, "timeout", "command timed out")
+		}
+	}
+}
+
+func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
+	if s.dispatchOverride != nil {
+		return s.dispatchOverride(env)
+	}
+
+	switch protocol.CommandType(env.Type) {
 		case protocol.CmdPing:
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{
-					V:       protocol.Version,
-					ID:      env.ID,
-					Type:    "pong",
-					Payload: map[string]any{"message": "pong"},
-				},
+			return responseOK(protocol.Envelope{
+				V:       protocol.Version,
+				ID:      env.ID,
+				Type:    "pong",
+				Payload: map[string]any{"message": "pong"},
 			})
 		case protocol.CmdNewSession:
 			id, err := s.sessions.NewSession()
 			if err != nil {
-				_ = writeError(conn, env.ID, "session_error", err.Error())
-				continue
+				return responseErr(env.ID, "session_error", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{
-					V:    protocol.Version,
-					ID:   env.ID,
-					Type: "session",
-					Payload: map[string]any{
-						"session_id": id,
-						"active":     true,
-					},
+			return responseOK(protocol.Envelope{
+				V:    protocol.Version,
+				ID:   env.ID,
+				Type: "session",
+				Payload: map[string]any{
+					"session_id": id,
+					"active":     true,
 				},
 			})
 		case protocol.CmdSwitchSession:
 			rawID, ok := env.Payload["session_id"].(string)
 			if !ok || rawID == "" {
-				_ = writeError(conn, env.ID, "invalid_payload", "session_id is required")
-				continue
+				return responseErr(env.ID, "invalid_payload", "session_id is required")
 			}
 			if err := s.sessions.SwitchSession(rawID); err != nil {
-				_ = writeError(conn, env.ID, "session_not_found", err.Error())
-				continue
+				return responseErr(env.ID, "session_not_found", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{
-					V:    protocol.Version,
-					ID:   env.ID,
-					Type: "session",
-					Payload: map[string]any{
-						"session_id": rawID,
-						"active":     true,
-					},
+			return responseOK(protocol.Envelope{
+				V:    protocol.Version,
+				ID:   env.ID,
+				Type: "session",
+				Payload: map[string]any{
+					"session_id": rawID,
+					"active":     true,
 				},
 			})
 		case protocol.CmdPrompt:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {
-				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
-				continue
+				return responseErr(env.ID, "invalid_payload", "text is required")
 			}
 			if err := s.loop.Prompt(text); err != nil {
-				_ = writeError(conn, env.ID, "command_rejected", err.Error())
-				continue
+				return responseErr(env.ID, "command_rejected", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{
-					V:    protocol.Version,
-					ID:   env.ID,
-					Type: "accepted",
-					Payload: map[string]any{
-						"command": "prompt",
-					},
+			return responseOK(protocol.Envelope{
+				V:    protocol.Version,
+				ID:   env.ID,
+				Type: "accepted",
+				Payload: map[string]any{
+					"command": "prompt",
 				},
 			})
 		case protocol.CmdSteer:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {
-				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
-				continue
+				return responseErr(env.ID, "invalid_payload", "text is required")
 			}
 			if err := s.loop.Steer(text); err != nil {
-				_ = writeError(conn, env.ID, "command_rejected", err.Error())
-				continue
+				return responseErr(env.ID, "command_rejected", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "steer"}},
-			})
+			return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "steer"}})
 		case protocol.CmdFollowUp:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {
-				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
-				continue
+				return responseErr(env.ID, "invalid_payload", "text is required")
 			}
 			if err := s.loop.FollowUp(text); err != nil {
-				_ = writeError(conn, env.ID, "command_rejected", err.Error())
-				continue
+				return responseErr(env.ID, "command_rejected", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "follow_up"}},
-			})
+			return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "follow_up"}})
 		case protocol.CmdAbort:
 			if err := s.loop.Abort(); err != nil {
-				_ = writeError(conn, env.ID, "command_rejected", err.Error())
-				continue
+				return responseErr(env.ID, "command_rejected", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "abort"}},
-			})
+			return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "abort"}})
 		case protocol.CmdSetActiveTools:
 			raw, ok := env.Payload["tools"].([]any)
 			if !ok {
-				_ = writeError(conn, env.ID, "invalid_payload", "tools must be an array")
-				continue
+				return responseErr(env.ID, "invalid_payload", "tools must be an array")
 			}
 			tools := make([]string, 0, len(raw))
 			valid := true
@@ -223,25 +230,20 @@ func (s *Server) handleConn(conn net.Conn) {
 				tools = append(tools, name)
 			}
 			if !valid {
-				_ = writeError(conn, env.ID, "invalid_payload", "tools must be string array")
-				continue
+				return responseErr(env.ID, "invalid_payload", "tools must be string array")
 			}
 			if err := s.engine.SetActiveTools(tools); err != nil {
-				_ = writeError(conn, env.ID, "command_rejected", err.Error())
-				continue
+				return responseErr(env.ID, "command_rejected", err.Error())
 			}
-			_ = writeOK(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{
-					V:       protocol.Version,
-					ID:      env.ID,
-					Type:    "accepted",
-					Payload: map[string]any{"command": "set_active_tools", "count": len(tools)},
-				},
+			return responseOK(protocol.Envelope{
+				V:       protocol.Version,
+				ID:      env.ID,
+				Type:    "accepted",
+				Payload: map[string]any{"command": "set_active_tools", "count": len(tools)},
 			})
 		default:
-			_ = writeError(conn, env.ID, "not_implemented", "command not implemented yet")
+			return responseErr(env.ID, "not_implemented", "command not implemented yet")
 		}
-	}
 }
 
 func writeOK(conn net.Conn, resp protocol.ResponseEnvelope) error {
@@ -249,12 +251,20 @@ func writeOK(conn net.Conn, resp protocol.ResponseEnvelope) error {
 	return writeResponse(conn, resp)
 }
 
+func responseOK(env protocol.Envelope) protocol.ResponseEnvelope {
+	return protocol.ResponseEnvelope{Envelope: env, OK: true}
+}
+
 func writeError(conn net.Conn, id, code, message string) error {
-	return writeResponse(conn, protocol.ResponseEnvelope{
+	return writeResponse(conn, responseErr(id, code, message))
+}
+
+func responseErr(id, code, message string) protocol.ResponseEnvelope {
+	return protocol.ResponseEnvelope{
 		Envelope: protocol.Envelope{V: protocol.Version, ID: id, Type: "error", Payload: map[string]any{}},
 		OK:       false,
 		Error:    &protocol.ErrorBody{Code: code, Message: message},
-	})
+	}
 }
 
 func writeResponse(conn net.Conn, resp protocol.ResponseEnvelope) error {

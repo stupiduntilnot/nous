@@ -296,6 +296,86 @@ func TestAbortWithoutActiveRunReturnsRejected(t *testing.T) {
 	}
 }
 
+func TestCommandTimeoutReturnsStandardError(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	srv.timeout = 20 * time.Millisecond
+	srv.dispatchOverride = func(env protocol.Envelope) protocol.ResponseEnvelope {
+		time.Sleep(120 * time.Millisecond)
+		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "late", Payload: map[string]any{}})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "slow-1",
+		Type:    string(protocol.CmdPing),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("send command failed: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected timeout response to fail")
+	}
+	if resp.Error == nil || resp.Error.Code != "timeout" {
+		t.Fatalf("unexpected timeout error: %+v", resp.Error)
+	}
+	if resp.ID != "slow-1" {
+		t.Fatalf("expected id echo for timeout, got %q", resp.ID)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestCommandPanicReturnsInternalError(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	srv.dispatchOverride = func(protocol.Envelope) protocol.ResponseEnvelope {
+		panic("boom")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "panic-1",
+		Type:    string(protocol.CmdPing),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("send command failed: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected panic response to fail")
+	}
+	if resp.Error == nil || resp.Error.Code != "internal_error" {
+		t.Fatalf("unexpected panic error: %+v", resp.Error)
+	}
+	if resp.ID != "panic-1" {
+		t.Fatalf("expected id echo for panic, got %q", resp.ID)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func waitForSocket(socket string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
