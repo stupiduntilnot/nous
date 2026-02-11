@@ -27,6 +27,9 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s ping
 
 - [ ] synchronous prompt returns `output/events/session_id`
 - [ ] async prompt returns accepted payload (`{"command":"prompt"}`)
+- [ ] tool-loop continuation includes `status` event with non-empty `message`
+- [ ] unknown/blocked tool path includes `warning` event with `code/message`
+- [ ] provider failure path returns `provider_error` and carries `cause` when available
 
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt "say hello"
@@ -69,6 +72,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools
 
 - [ ] TUI connects and shows `status: connected`
 - [ ] TUI command parsing works for `prompt/prompt_async/new/switch/branch/set_active_tools/ext`
+- [ ] TUI renders `status/warning/error` lines from sync prompt events
 
 ```bash
 go run ./cmd/tui /tmp/pi-core.sock
