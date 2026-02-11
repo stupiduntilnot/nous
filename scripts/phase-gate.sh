@@ -32,6 +32,12 @@ require_file docs/protocol/examples/commands.ndjson
 require_file docs/protocol/examples/responses.ndjson
 require_file docs/protocol/examples/events_prompt_tool.ndjson
 require_file docs/protocol/examples/events_runtime_tool_sequence.ndjson
+require_file scripts/local-smoke.sh
+require_file scripts/session-smoke.sh
+require_file scripts/extension-smoke.sh
+require_file scripts/protocol-compat-smoke.sh
+require_file scripts/tui-smoke.sh
+require_file scripts/smoke.sh
 rg -q 'UDS \+ NDJSON' docs/req.md docs/dev.md
 
 echo "[gate] verify critical test inventory"
