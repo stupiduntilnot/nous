@@ -118,3 +118,46 @@ func TestManagerAppendRequiresActiveSession(t *testing.T) {
 		t.Fatalf("expected append without active session to fail")
 	}
 }
+
+func TestManagerBranchAndBuildContext(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+
+	parentID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new parent session failed: %v", err)
+	}
+	if err := m.Append(map[string]any{"id": "p1"}); err != nil {
+		t.Fatalf("append parent record failed: %v", err)
+	}
+
+	childID, err := m.BranchFrom(parentID)
+	if err != nil {
+		t.Fatalf("branch from parent failed: %v", err)
+	}
+	if err := m.Append(map[string]any{"id": "c1"}); err != nil {
+		t.Fatalf("append child record failed: %v", err)
+	}
+
+	ctxRecords, err := m.BuildContext(childID)
+	if err != nil {
+		t.Fatalf("build context failed: %v", err)
+	}
+	if len(ctxRecords) != 2 {
+		t.Fatalf("expected 2 context records, got %d", len(ctxRecords))
+	}
+
+	var first map[string]any
+	if err := json.Unmarshal(ctxRecords[0], &first); err != nil {
+		t.Fatalf("unmarshal first record failed: %v", err)
+	}
+	var second map[string]any
+	if err := json.Unmarshal(ctxRecords[1], &second); err != nil {
+		t.Fatalf("unmarshal second record failed: %v", err)
+	}
+	if first["id"] != "p1" || second["id"] != "c1" {
+		t.Fatalf("unexpected context order: first=%v second=%v", first, second)
+	}
+}
