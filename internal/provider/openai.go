@@ -82,7 +82,15 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 		var decoded struct {
 			Choices []struct {
 				Message struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"message"`
 			} `json:"choices"`
 		}
@@ -94,8 +102,27 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 			out <- Event{Type: EventError, Err: fmt.Errorf("openai_empty_choices")}
 			return
 		}
-
-		out <- Event{Type: EventTextDelta, Delta: decoded.Choices[0].Message.Content}
+		msg := decoded.Choices[0].Message
+		for _, tc := range msg.ToolCalls {
+			args := map[string]any{}
+			if strings.TrimSpace(tc.Function.Arguments) != "" {
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+					out <- Event{Type: EventError, Err: fmt.Errorf("openai_bad_tool_args: %w", err)}
+					return
+				}
+			}
+			out <- Event{
+				Type: EventToolCall,
+				ToolCall: ToolCall{
+					ID:        tc.ID,
+					Name:      tc.Function.Name,
+					Arguments: args,
+				},
+			}
+		}
+		if msg.Content != "" {
+			out <- Event{Type: EventTextDelta, Delta: msg.Content}
+		}
 		out <- Event{Type: EventDone}
 	}()
 	return out
