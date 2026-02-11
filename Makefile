@@ -1,4 +1,4 @@
-.PHONY: build test lint e2e-pingpong e2e-smoke e2e-local e2e-session
+.PHONY: build test lint ci e2e-pingpong e2e-smoke e2e-local e2e-session
 
 build:
 	go build ./...
@@ -8,6 +8,12 @@ test:
 
 lint:
 	go vet ./...
+
+ci:
+	go test ./...
+	./scripts/local-smoke.sh
+	./scripts/session-smoke.sh
+	./scripts/smoke.sh
 
 e2e-pingpong:
 	./scripts/pingpong.sh
