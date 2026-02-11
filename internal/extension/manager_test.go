@@ -106,3 +106,40 @@ func TestRegisterToolAndCommand(t *testing.T) {
 		t.Fatalf("expected invalid command registration to fail")
 	}
 }
+
+func TestExecuteRegisteredToolAndCommand(t *testing.T) {
+	m := NewManager()
+	if err := m.RegisterTool("echo", func(args map[string]any) (string, error) {
+		in, _ := args["text"].(string)
+		return "tool:" + in, nil
+	}); err != nil {
+		t.Fatalf("register tool failed: %v", err)
+	}
+	if err := m.RegisterCommand("hello", func(payload map[string]any) (map[string]any, error) {
+		name, _ := payload["name"].(string)
+		return map[string]any{"greeting": "hi " + name}, nil
+	}); err != nil {
+		t.Fatalf("register command failed: %v", err)
+	}
+
+	toolOut, handled, err := m.ExecuteTool("echo", map[string]any{"text": "x"})
+	if err != nil || !handled || toolOut != "tool:x" {
+		t.Fatalf("unexpected tool execute result: out=%q handled=%v err=%v", toolOut, handled, err)
+	}
+	_, handled, err = m.ExecuteTool("missing", map[string]any{})
+	if err != nil || handled {
+		t.Fatalf("missing tool should not be handled: handled=%v err=%v", handled, err)
+	}
+
+	cmdOut, handled, err := m.ExecuteCommand("hello", map[string]any{"name": "dev"})
+	if err != nil || !handled {
+		t.Fatalf("unexpected command execute result: out=%v handled=%v err=%v", cmdOut, handled, err)
+	}
+	if got, _ := cmdOut["greeting"].(string); got != "hi dev" {
+		t.Fatalf("unexpected command payload: %v", cmdOut)
+	}
+	_, handled, err = m.ExecuteCommand("missing", map[string]any{})
+	if err != nil || handled {
+		t.Fatalf("missing command should not be handled: handled=%v err=%v", handled, err)
+	}
+}

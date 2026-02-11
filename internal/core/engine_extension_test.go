@@ -115,3 +115,29 @@ func TestEngineRunsTurnEndHook(t *testing.T) {
 		t.Fatalf("expected turn_end hook to be called")
 	}
 }
+
+func TestEngineExecutesExtensionRegisteredTool(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, scriptedProvider{})
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "first-ok", nil
+		}},
+	})
+
+	m := extension.NewManager()
+	if err := m.RegisterTool("second", func(args map[string]any) (string, error) {
+		return "second-from-ext", nil
+	}); err != nil {
+		t.Fatalf("register extension tool failed: %v", err)
+	}
+	e.SetExtensionManager(m)
+
+	got, err := e.Prompt(context.Background(), "run-ext-tool", "go")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if got != "first-oksecond-from-ext" {
+		t.Fatalf("unexpected output: %q", got)
+	}
+}

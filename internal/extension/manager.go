@@ -85,6 +85,37 @@ func (m *Manager) RegisterCommand(name string, handler CommandHandler) error {
 	return nil
 }
 
+func (m *Manager) ExecuteTool(name string, args map[string]any) (result string, handled bool, err error) {
+	m.mu.RLock()
+	h, ok := m.tools[name]
+	m.mu.RUnlock()
+	if !ok {
+		return "", false, nil
+	}
+	out, err := h(args)
+	if err != nil {
+		return "", true, err
+	}
+	return out, true, nil
+}
+
+func (m *Manager) ExecuteCommand(name string, payload map[string]any) (result map[string]any, handled bool, err error) {
+	m.mu.RLock()
+	h, ok := m.commands[name]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	out, err := h(payload)
+	if err != nil {
+		return nil, true, err
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	return out, true, nil
+}
+
 func (m *Manager) RegisterInputHook(h InputHook) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

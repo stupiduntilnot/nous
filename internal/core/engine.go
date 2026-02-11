@@ -146,9 +146,6 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	}
 	defer func() { _ = e.runtime.ToolExecutionEnd(call.ID, call.Name) }()
 
-	if _, active := e.active[call.Name]; !active {
-		return "", fmt.Errorf("tool_not_active: %s", call.Name)
-	}
 	if e.ext != nil {
 		hookOut, err := e.ext.RunToolCallHooks(call.Name, call.Arguments)
 		if err != nil {
@@ -160,7 +157,30 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	}
 	tool, ok := e.tools[call.Name]
 	if !ok {
+		if e.ext != nil {
+			extResult, handled, err := e.ext.ExecuteTool(call.Name, call.Arguments)
+			if err != nil {
+				return "", err
+			}
+			if handled {
+				result := extResult
+				if e.ext != nil {
+					mutated, err := e.ext.RunToolResultHooks(call.Name, result)
+					if err != nil {
+						return "", err
+					}
+					result = mutated.Result
+				}
+				if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
+					return "", err
+				}
+				return result, nil
+			}
+		}
 		return "", fmt.Errorf("tool_not_found: %s", call.Name)
+	}
+	if _, active := e.active[call.Name]; !active {
+		return "", fmt.Errorf("tool_not_active: %s", call.Name)
 	}
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err != nil {
