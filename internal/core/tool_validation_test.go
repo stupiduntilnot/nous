@@ -41,3 +41,37 @@ func TestNormalizeFindArgsRequiresQuery(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestNormalizeGrepArgsAcceptsAliases(t *testing.T) {
+	got, err := normalizeToolArguments("grep", map[string]any{
+		"query":      "TODO",
+		"directory":  ".",
+		"maxResults": "3",
+		"ignoreCase": "true",
+	})
+	if err != nil {
+		t.Fatalf("normalize grep args failed: %v", err)
+	}
+	if p, _ := got["pattern"].(string); p != "TODO" {
+		t.Fatalf("unexpected pattern: %#v", got["pattern"])
+	}
+	if path, _ := got["path"].(string); path != "." {
+		t.Fatalf("unexpected path: %#v", got["path"])
+	}
+	if lim, _ := got["limit"].(int); lim != 3 {
+		t.Fatalf("unexpected limit: %#v", got["limit"])
+	}
+	if ic, _ := got["ignore_case"].(bool); !ic {
+		t.Fatalf("unexpected ignore_case: %#v", got["ignore_case"])
+	}
+}
+
+func TestNormalizeGrepArgsRequiresPattern(t *testing.T) {
+	_, err := normalizeToolArguments("grep", map[string]any{"path": "."})
+	if err == nil {
+		t.Fatalf("expected grep pattern validation error")
+	}
+	if err.Error() != "validation_failed: grep.pattern is required" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

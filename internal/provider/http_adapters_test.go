@@ -180,6 +180,22 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 		if !ok || len(required) == 0 || required[0] != "path" {
 			t.Fatalf("expected required path for read schema, got: %#v", params["required"])
 		}
+		grepTool, ok := rawTools[1].(map[string]any)
+		if !ok {
+			t.Fatalf("tool payload must be object: %#v", rawTools[1])
+		}
+		grepFn, ok := grepTool["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("function payload missing: %#v", grepTool)
+		}
+		grepParams, ok := grepFn["parameters"].(map[string]any)
+		if !ok {
+			t.Fatalf("grep parameters missing: %#v", grepFn)
+		}
+		grepRequired, ok := grepParams["required"].([]any)
+		if !ok || len(grepRequired) == 0 || grepRequired[0] != "pattern" {
+			t.Fatalf("expected required pattern for grep schema, got: %#v", grepParams["required"])
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -196,7 +212,7 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
 		Prompt:      "hi",
-		ActiveTools: []string{"read", "tool_b"},
+		ActiveTools: []string{"read", "grep"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
 		t.Fatalf("unexpected events: %+v", evs)

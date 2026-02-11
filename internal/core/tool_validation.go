@@ -14,6 +14,8 @@ func normalizeToolArguments(toolName string, args map[string]any) (map[string]an
 		return normalizeLSArgs(args)
 	case "find":
 		return normalizeFindArgs(args)
+	case "grep":
+		return normalizeGrepArgs(args)
 	default:
 		return args, nil
 	}
@@ -85,6 +87,34 @@ func normalizeFindArgs(args map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
+func normalizeGrepArgs(args map[string]any) (map[string]any, error) {
+	pattern := resolveStringArg(args, "pattern", "query")
+	if pattern == "" {
+		return nil, fmt.Errorf("validation_failed: grep.pattern is required")
+	}
+	out := map[string]any{"pattern": pattern}
+	path := resolveStringArg(args, "path", "dir", "directory", "target_path", "targetPath")
+	if path == "" {
+		path = "."
+	}
+	out["path"] = path
+
+	if n, ok, err := resolveIntArg(args, []string{"limit", "max_results", "maxResults"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: grep.limit must be a number")
+	} else if ok {
+		if n <= 0 {
+			return nil, fmt.Errorf("validation_failed: grep.limit must be > 0")
+		}
+		out["limit"] = n
+	}
+	if b, ok, err := resolveBoolArg(args, []string{"ignore_case", "ignoreCase"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: grep.ignore_case must be a boolean")
+	} else if ok {
+		out["ignore_case"] = b
+	}
+	return out, nil
+}
+
 func resolveStringArg(args map[string]any, keys ...string) string {
 	for _, k := range keys {
 		v, ok := args[k]
@@ -132,6 +162,21 @@ func resolveIntArg(args map[string]any, keys []string) (int, bool, error) {
 	return 0, false, nil
 }
 
+func resolveBoolArg(args map[string]any, keys []string) (bool, bool, error) {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		b, err := toBool(v)
+		if err != nil {
+			return false, true, err
+		}
+		return b, true, nil
+	}
+	return false, false, nil
+}
+
 func toInt(v any) (int, error) {
 	switch n := v.(type) {
 	case int:
@@ -159,5 +204,23 @@ func toInt(v any) (int, error) {
 		return int(f), nil
 	default:
 		return 0, fmt.Errorf("not_number")
+	}
+}
+
+func toBool(v any) (bool, error) {
+	switch b := v.(type) {
+	case bool:
+		return b, nil
+	case string:
+		s := strings.TrimSpace(strings.ToLower(b))
+		if s == "true" {
+			return true, nil
+		}
+		if s == "false" {
+			return false, nil
+		}
+		return false, fmt.Errorf("not_bool")
+	default:
+		return false, fmt.Errorf("not_bool")
 	}
 }

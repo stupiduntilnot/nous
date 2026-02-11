@@ -223,6 +223,31 @@ func buildOpenAITools(names []string) []map[string]any {
 				"required":             []string{"query"},
 				"additionalProperties": true,
 			}
+		case "grep":
+			description = "Search file contents with a pattern and return matching lines."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"pattern": map[string]any{
+						"type":        "string",
+						"description": "Pattern to search (regex).",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "File or directory path to search. Defaults to current directory.",
+					},
+					"ignore_case": map[string]any{
+						"type":        "boolean",
+						"description": "Case-insensitive search.",
+					},
+					"limit": map[string]any{
+						"type":        "number",
+						"description": "Maximum number of matching lines to return.",
+					},
+				},
+				"required":             []string{"pattern"},
+				"additionalProperties": true,
+			}
 		}
 		tools = append(tools, map[string]any{
 			"type": "function",
