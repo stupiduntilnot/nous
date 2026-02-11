@@ -1,4 +1,4 @@
-.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension
+.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat
 
 build:
 	go build ./...
@@ -16,6 +16,7 @@ ci:
 	./scripts/local-smoke.sh
 	./scripts/session-smoke.sh
 	./scripts/extension-smoke.sh
+	./scripts/protocol-compat-smoke.sh
 	./scripts/smoke.sh
 
 phase-gate:
@@ -35,3 +36,6 @@ e2e-session:
 
 e2e-extension:
 	./scripts/extension-smoke.sh
+
+e2e-protocol-compat:
+	./scripts/protocol-compat-smoke.sh

@@ -269,7 +269,7 @@
 ### H2. Phase 2（IPC + TUI）
 - 验收：
   - F + G 全部通过
-  - `scripts/pingpong.sh` 与 `scripts/smoke.sh` 通过
+  - `scripts/pingpong.sh`、`scripts/smoke.sh` 与 `scripts/protocol-compat-smoke.sh` 通过
 
 ### H3. 回归门禁
 - 验收：
