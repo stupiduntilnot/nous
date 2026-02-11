@@ -64,6 +64,8 @@ require_test ./internal/protocol TestCommandPayloadRequirementsCoverAllCommands
 require_test ./internal/protocol TestDevPlanListsAllProtocolCommandsAndEvents
 require_test ./internal/protocol TestDevPlanMentionsTUIEvidenceArtifactCommand
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
+require_test ./internal/protocol TestCommandExamplesCoveredByCommandRequirements
+require_test ./internal/protocol TestCommandRequirementsHaveExamples
 require_test ./internal/protocol TestProtocolExamplesResponsesNDJSON
 require_test ./internal/protocol TestResponseExamplesCoveredByResponseRequirements
 require_test ./internal/protocol TestResponseRequirementsHaveSuccessExamples
