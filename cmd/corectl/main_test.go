@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"oh-my-agent/internal/protocol"
+)
 
 func TestParseArgs(t *testing.T) {
 	tests := []struct {
@@ -45,5 +49,17 @@ func TestParseArgsPromptAsyncPayload(t *testing.T) {
 	wait, _ := payload["wait"].(bool)
 	if wait {
 		t.Fatalf("expected wait=false for prompt_async")
+	}
+}
+
+func TestFormatError(t *testing.T) {
+	got := formatError(&protocol.ErrorBody{Code: "provider_error", Message: "request failed", Cause: "dial timeout"})
+	if got != "provider_error: request failed (dial timeout)" {
+		t.Fatalf("unexpected formatted error: %q", got)
+	}
+
+	got = formatError(&protocol.ErrorBody{Code: "invalid_payload", Message: "text is required"})
+	if got != "invalid_payload: text is required" {
+		t.Fatalf("unexpected formatted error without cause: %q", got)
 	}
 }

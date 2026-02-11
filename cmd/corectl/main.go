@@ -41,7 +41,7 @@ func main() {
 	}
 	if !resp.OK {
 		if resp.Error != nil {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", resp.Error.Code, resp.Error.Message)
+			fmt.Fprintln(os.Stderr, formatError(resp.Error))
 		} else {
 			fmt.Fprintln(os.Stderr, "request failed")
 		}
@@ -141,4 +141,14 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  branch <parent_session_id>")
 	fmt.Fprintln(os.Stderr, "  set_active_tools <tool...>")
 	fmt.Fprintln(os.Stderr, "  ext <name> [json_payload]")
+}
+
+func formatError(err *protocol.ErrorBody) string {
+	if err == nil {
+		return "request failed"
+	}
+	if err.Cause == "" {
+		return fmt.Sprintf("%s: %s", err.Code, err.Message)
+	}
+	return fmt.Sprintf("%s: %s (%s)", err.Code, err.Message, err.Cause)
 }
