@@ -10,6 +10,7 @@ func TestParseArgs(t *testing.T) {
 	}{
 		{args: []string{"ping"}, wantCmd: "ping"},
 		{args: []string{"prompt", "hello"}, wantCmd: "prompt"},
+		{args: []string{"prompt_async", "hello"}, wantCmd: "prompt"},
 		{args: []string{"steer", "focus"}, wantCmd: "steer"},
 		{args: []string{"follow_up", "next"}, wantCmd: "follow_up"},
 		{args: []string{"abort"}, wantCmd: "abort"},
@@ -33,5 +34,16 @@ func TestParseArgs(t *testing.T) {
 		if cmd != tc.wantCmd {
 			t.Fatalf("unexpected cmd for args=%v: got=%q want=%q", tc.args, cmd, tc.wantCmd)
 		}
+	}
+}
+
+func TestParseArgsPromptAsyncPayload(t *testing.T) {
+	_, payload, err := parseArgs([]string{"prompt_async", "hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wait, _ := payload["wait"].(bool)
+	if wait {
+		t.Fatalf("expected wait=false for prompt_async")
 	}
 }
