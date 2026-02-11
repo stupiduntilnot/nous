@@ -273,4 +273,4 @@
 - 验收：
   - 全量回归通过
   - 文档与实现一致（协议无漂移）
-  - `make ci` 通过
+  - `make ci` 通过（含 local/session/extension/smoke e2e）
