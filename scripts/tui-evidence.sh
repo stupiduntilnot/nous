@@ -33,7 +33,14 @@ if [[ ! -S "$SOCKET" ]]; then
 fi
 
 OUT=$(printf 'ping\nprompt_async hello-from-evidence\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
-printf '%s\n' "$OUT" | tee "$OUT_FILE" >/dev/null
+{
+  echo "# TUI Evidence"
+  echo "timestamp: $STAMP"
+  echo "socket: $SOCKET"
+  echo "commands: ping | prompt_async hello-from-evidence | status | quit"
+  echo "---"
+  printf '%s\n' "$OUT"
+} | tee "$OUT_FILE" >/dev/null
 
 echo "$OUT" | rg -q 'status: connected' || { echo "tui evidence missing connected status" >&2; exit 1; }
 echo "$OUT" | rg -q 'ok: type=pong' || { echo "tui evidence missing pong" >&2; exit 1; }
