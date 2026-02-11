@@ -88,6 +88,7 @@ func TestProtocolExamplesResponsesNDJSON(t *testing.T) {
 				t.Fatalf("response line %d invalid error body", count+1)
 			}
 		}
+		assertResponsePayloadSemantics(t, resp, count+1)
 		count++
 	}
 	if err := scanner.Err(); err != nil {
@@ -95,6 +96,33 @@ func TestProtocolExamplesResponsesNDJSON(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatalf("responses example should not be empty")
+	}
+}
+
+func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line int) {
+	t.Helper()
+	if !resp.OK {
+		return
+	}
+	switch resp.Type {
+	case "pong":
+		return
+	case "accepted":
+		cmd, _ := resp.Payload["command"].(string)
+		if cmd == "" {
+			t.Fatalf("response line %d accepted payload requires command", line)
+		}
+		if cmd == "prompt" {
+			if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+				t.Fatalf("response line %d accepted prompt requires session_id", line)
+			}
+		}
+	case "result":
+		if _, ok := resp.Payload["output"].(string); !ok {
+			t.Fatalf("response line %d result payload requires output", line)
+		}
+	default:
+		// keep examples permissive for other success envelopes (session/extension_result)
 	}
 }
 
