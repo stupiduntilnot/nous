@@ -1,21 +1,12 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
 )
 
 type OpenAIAdapter struct {
-	apiKey  string
-	model   string
-	baseURL string
-	client  *http.Client
+	impl *openAICompatAdapter
 }
 
 func NewOpenAIAdapter(apiKey, model, baseURL string) (*OpenAIAdapter, error) {
@@ -26,204 +17,15 @@ func NewOpenAIAdapter(apiKey, model, baseURL string) (*OpenAIAdapter, error) {
 		return nil, fmt.Errorf("missing_openai_model")
 	}
 	if baseURL == "" {
-		baseURL = "https://api.openai.com"
+		baseURL = "https://api.openai.com/v1"
 	}
-	return &OpenAIAdapter{
-		apiKey:  apiKey,
-		model:   model,
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 60 * time.Second},
-	}, nil
+	impl, err := newOpenAICompatAdapter(apiKey, model, baseURL, false)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenAIAdapter{impl: impl}, nil
 }
 
 func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
-	out := make(chan Event, 4)
-	go func() {
-		defer close(out)
-		out <- Event{Type: EventStart}
-
-		payload := map[string]any{
-			"model": a.model,
-			"messages": []map[string]string{
-				{"role": "user", "content": req.Prompt},
-			},
-		}
-		if len(req.ToolResults) > 0 {
-			payload["messages"] = append(payload["messages"].([]map[string]string), map[string]string{
-				"role":    "user",
-				"content": "Tool results:\n" + strings.Join(req.ToolResults, "\n"),
-			})
-		}
-		if len(req.ActiveTools) > 0 {
-			payload["tools"] = buildOpenAITools(req.ActiveTools)
-		}
-		b, err := json.Marshal(payload)
-		if err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+"/v1/chat/completions", bytes.NewReader(b))
-		if err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
-		httpReq.Header.Set("Content-Type", "application/json")
-
-		resp, err := a.client.Do(httpReq)
-		if err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-		if resp.StatusCode >= 400 {
-			out <- Event{Type: EventError, Err: fmt.Errorf("openai_http_%d: %s", resp.StatusCode, string(body))}
-			return
-		}
-
-		var decoded struct {
-			Choices []struct {
-				FinishReason string `json:"finish_reason"`
-				Message struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
-						ID       string `json:"id"`
-						Type     string `json:"type"`
-						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
-						} `json:"function"`
-					} `json:"tool_calls"`
-				} `json:"message"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal(body, &decoded); err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-		if len(decoded.Choices) == 0 {
-			out <- Event{Type: EventError, Err: fmt.Errorf("openai_empty_choices")}
-			return
-		}
-		msg := decoded.Choices[0].Message
-		finishReason := decoded.Choices[0].FinishReason
-		emittedToolCall := false
-		for _, tc := range msg.ToolCalls {
-			args := map[string]any{}
-			if strings.TrimSpace(tc.Function.Arguments) != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-					out <- Event{Type: EventError, Err: fmt.Errorf("openai_bad_tool_args: %w", err)}
-					return
-				}
-			}
-			out <- Event{
-				Type: EventToolCall,
-				ToolCall: ToolCall{
-					ID:        tc.ID,
-					Name:      tc.Function.Name,
-					Arguments: args,
-				},
-			}
-			emittedToolCall = true
-		}
-		if !emittedToolCall && strings.TrimSpace(msg.Content) != "" {
-			if tc, ok := parseTextToolCall(msg.Content, req.ActiveTools); ok {
-				out <- Event{Type: EventToolCall, ToolCall: tc}
-				out <- Event{Type: EventAwaitNext}
-				out <- Event{Type: EventDone}
-				return
-			}
-		}
-		if msg.Content != "" {
-			out <- Event{Type: EventTextDelta, Delta: msg.Content}
-		}
-		if finishReason == "tool_calls" {
-			out <- Event{Type: EventAwaitNext}
-		}
-		out <- Event{Type: EventDone}
-	}()
-	return out
-}
-
-func parseTextToolCall(content string, activeTools []string) (ToolCall, bool) {
-	raw := strings.TrimSpace(content)
-	raw = strings.TrimPrefix(raw, "```json")
-	raw = strings.TrimPrefix(raw, "```")
-	raw = strings.TrimSuffix(raw, "```")
-	raw = strings.TrimSpace(raw)
-
-	var obj struct {
-		Name      string         `json:"name"`
-		Arguments map[string]any `json:"arguments"`
-	}
-	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-		return ToolCall{}, false
-	}
-	name := normalizeToolName(strings.TrimSpace(obj.Name), activeTools)
-	if name == "" {
-		return ToolCall{}, false
-	}
-	if obj.Arguments == nil {
-		obj.Arguments = map[string]any{}
-	}
-	return ToolCall{
-		ID:        "toolcall-from-text",
-		Name:      name,
-		Arguments: obj.Arguments,
-	}, true
-}
-
-func normalizeToolName(raw string, activeTools []string) string {
-	if raw == "" {
-		return ""
-	}
-	for _, name := range activeTools {
-		if raw == name {
-			return name
-		}
-	}
-	for _, name := range activeTools {
-		if strings.HasPrefix(raw, name+" ") {
-			return name
-		}
-	}
-	fields := strings.Fields(raw)
-	if len(fields) > 0 {
-		first := fields[0]
-		for _, name := range activeTools {
-			if first == name {
-				return name
-			}
-		}
-	}
-	return ""
-}
-
-func buildOpenAITools(names []string) []map[string]any {
-	tools := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		tools = append(tools, map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        name,
-				"description": "registered runtime tool",
-				"parameters": map[string]any{
-					"type":                 "object",
-					"properties":           map[string]any{},
-					"additionalProperties": true,
-				},
-			},
-		})
-	}
-	return tools
+	return a.impl.Stream(ctx, req)
 }

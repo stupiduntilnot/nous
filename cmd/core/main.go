@@ -18,7 +18,7 @@ import (
 
 func main() {
 	socket := flag.String("socket", "/tmp/pi-core.sock", "uds socket path")
-	providerName := flag.String("provider", "mock", "provider: mock|openai|gemini")
+	providerName := flag.String("provider", "mock", "provider: mock|openai|ollama|gemini")
 	model := flag.String("model", "", "provider model name")
 	apiBase := flag.String("api-base", "", "optional provider API base URL")
 	commandTimeout := flag.Duration("command-timeout", 3*time.Second, "ipc command timeout (e.g. 3s, 500ms)")

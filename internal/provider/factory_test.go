@@ -31,3 +31,14 @@ func TestBuildGeminiRequiresKey(t *testing.T) {
 		t.Fatalf("expected gemini build without key to fail")
 	}
 }
+
+func TestBuildOllamaDoesNotRequireKey(t *testing.T) {
+	t.Setenv("OLLAMA_API_KEY", "")
+	p, err := Build("ollama", "qwen2.5-coder:7b", "http://localhost:11434")
+	if err != nil {
+		t.Fatalf("build ollama failed: %v", err)
+	}
+	if _, ok := p.(*OllamaAdapter); !ok {
+		t.Fatalf("expected *OllamaAdapter, got %T", p)
+	}
+}

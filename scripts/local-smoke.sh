@@ -4,7 +4,7 @@ set -euo pipefail
 SOCKET="${1:-/tmp/pi-core-local.sock}"
 MODEL="${MODEL:-qwen2.5-coder:7b}"
 API_BASE="${API_BASE:-http://127.0.0.1:11434}"
-API_KEY="${OPENAI_API_KEY:-dummy}"
+API_KEY="${OLLAMA_API_KEY:-ollama}"
 
 rm -f "$SOCKET"
 
@@ -17,9 +17,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-OPENAI_API_KEY="$API_KEY" go run ./cmd/core \
+OLLAMA_API_KEY="$API_KEY" go run ./cmd/core \
   --socket "$SOCKET" \
-  --provider openai \
+  --provider ollama \
   --model "$MODEL" \
   --api-base "$API_BASE" >/tmp/pi-core-local.log 2>&1 &
 CORE_PID=$!
@@ -35,7 +35,7 @@ if [[ ! -S "$SOCKET" ]]; then
   exit 1
 fi
 
-OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt "Reply with exactly: core-local-ok")
+OUT=$(go run ./cmd/corectl --socket "$SOCKET" --request-timeout 30s prompt "Reply with exactly: core-local-ok")
 echo "$OUT" | rg -qi '"output": "core-local-ok"' || {
   echo "unexpected local model output: $OUT" >&2
   exit 1

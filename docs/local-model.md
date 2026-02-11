@@ -32,16 +32,18 @@
 
 ## 3. 我们这个 Go 项目该怎么做
 
-当前项目已经有：
+当前项目现在有两条清晰路径：
 
-1. `cmd/core --provider mock|openai|gemini`
-2. `--api-base` 可指定 provider endpoint
-3. `openai` adapter 走 `/v1/chat/completions`
+1. `--provider openai`：严格 OpenAI 语义（只认标准 `tool_calls`）
+2. `--provider ollama`：本地 OpenAI-compatible 语义（兼容文本 JSON tool call 回退）
+3. `--provider gemini`
+4. `--api-base` 可指定 provider endpoint
 
 因此开发阶段推荐：
 
-1. 本地模型统一走 `openai-compatible` 路径
-- Ollama / LM Studio / vLLM 都可先对接成 `--provider openai`
+1. 本地模型统一走 `--provider ollama`
+- 默认目标是 Ollama 的 OpenAI-compatible endpoint
+- 同时兼容部分本地模型“把 tool call 作为文本输出”的情况
 
 2. 云模型只做回归验证
 - 日常开发默认本地模型，降低成本
@@ -83,13 +85,12 @@ ollama list
 
 ### 4.3 启动 Core（连接本地服务）
 
-注意：当前代码会请求 `<api-base>/v1/chat/completions`，所以 `api-base` 传主机根地址，不要再额外带 `/v1`。
+注意：`api-base` 支持两种写法（都会归一化）：`http://127.0.0.1:11434` 或 `http://127.0.0.1:11434/v1`。
 
 ```bash
-OPENAI_API_KEY=dummy \
 go run ./cmd/core \
   --socket /tmp/pi-core.sock \
-  --provider openai \
+  --provider ollama \
   --model qwen2.5-coder:7b \
   --api-base http://127.0.0.1:11434
 ```
@@ -111,12 +112,12 @@ make e2e-local
 只有在以下场景才必须提供云 key：
 
 1. 你要测试 `--provider gemini`（需要 `GEMINI_API_KEY`）
-2. 你要测试 OpenAI 云端（需要真实 `OPENAI_API_KEY`）
+2. 你要测试 `--provider openai`（需要真实 `OPENAI_API_KEY`）
 
-如果只是本地模型开发，`openai-compatible` 通常用占位 key（如 `dummy`）即可。
+如果只是本地模型开发，`--provider ollama` 默认不要求你显式提供 key（内部用占位值）。
 
 ## 6. 建议的开发策略
 
-1. 日常开发：本地模型（Ollama/LM Studio/vLLM）
+1. 日常开发：`--provider ollama`（本地模型）
 2. 里程碑回归：云模型（Gemini/OpenAI）做小样本验证
 3. 最终发布前：云模型 + 本地模型都跑一遍 `e2e-smoke`

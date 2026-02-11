@@ -92,7 +92,7 @@ func TestOpenAIAdapterToolCalls(t *testing.T) {
 	}
 }
 
-func TestOpenAIAdapterTextToolCallFallback(t *testing.T) {
+func TestOpenAIAdapterTextToolCallStaysAsText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -110,6 +110,40 @@ func TestOpenAIAdapterTextToolCallFallback(t *testing.T) {
 	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
 	if err != nil {
 		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Prompt:      "read file",
+		ActiveTools: []string{"read", "ls"},
+	}))
+	if len(evs) < 3 {
+		t.Fatalf("unexpected event count: %d", len(evs))
+	}
+	if evs[1].Type != EventTextDelta {
+		t.Fatalf("expected text event, got %+v", evs[1])
+	}
+	if !strings.Contains(evs[1].Delta, "\"name\": \"read registered runtime tool\"") {
+		t.Fatalf("unexpected text payload: %+v", evs[1])
+	}
+}
+
+func TestOllamaAdapterTextToolCallFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "```json\n{\n  \"name\": \"read registered runtime tool\",\n  \"arguments\": {\"path\": \"/tmp/a.txt\"}\n}\n```",
+					},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOllamaAdapter("ollama", "qwen2.5-coder:7b", srv.URL)
+	if err != nil {
+		t.Fatalf("new ollama adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
 		Prompt:      "read file",
