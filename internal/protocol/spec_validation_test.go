@@ -43,6 +43,17 @@ func TestProtocolSchemaValidation(t *testing.T) {
 	assertRequiredField(t, reqs, "branch_session", "session_id")
 	assertRequiredField(t, reqs, "extension_command", "name")
 	assertNotRequiredField(t, reqs, "branch_session", "parent_id")
+	respReqs, ok := doc["x-response-payload-requirements"].(map[string]any)
+	if !ok {
+		t.Fatalf("x-response-payload-requirements is missing or invalid")
+	}
+	assertRequiredField(t, respReqs, "pong", "message")
+	assertRequiredField(t, respReqs, "accepted:prompt", "command")
+	assertRequiredField(t, respReqs, "accepted:prompt", "session_id")
+	assertRequiredField(t, respReqs, "result", "output")
+	assertRequiredField(t, respReqs, "result", "events")
+	assertRequiredField(t, respReqs, "result", "session_id")
+	assertRequiredField(t, respReqs, "session", "session_id")
 
 	components := doc["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)

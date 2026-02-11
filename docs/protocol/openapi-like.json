@@ -21,6 +21,12 @@
     "branch_session": ["session_id"],
     "extension_command": ["name"]
   },
+  "x-response-payload-requirements": {
+    "pong": ["message"],
+    "accepted:prompt": ["command", "session_id"],
+    "result": ["output", "events", "session_id"],
+    "session": ["session_id"]
+  },
   "paths": {
     "/command": {
       "post": {
