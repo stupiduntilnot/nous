@@ -27,6 +27,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s ping
 
 - [ ] synchronous prompt returns `output/events/session_id`
 - [ ] async prompt returns accepted payload (`{"command":"prompt","session_id":"..."}`)
+- [ ] async prompt without pre-created session still returns non-empty `session_id`
 - [ ] tool-loop continuation includes `status` event with non-empty `message`
 - [ ] unknown/blocked tool path includes `warning` event with `code/message`
 - [ ] provider failure path returns `provider_error` and carries `cause` when available
