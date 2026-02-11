@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"oh-my-agent/internal/core"
+	"oh-my-agent/internal/provider"
 	"oh-my-agent/internal/protocol"
 	"oh-my-agent/internal/session"
 )
@@ -20,6 +22,8 @@ type Server struct {
 	listener   net.Listener
 	wg         sync.WaitGroup
 	sessions   *session.Manager
+	engine     *core.Engine
+	loop       *core.CommandLoop
 }
 
 func NewServer(socketPath string) *Server {
@@ -37,6 +41,12 @@ func (s *Server) Serve(ctx context.Context) error {
 			return fmt.Errorf("init session manager: %w", err)
 		}
 		s.sessions = mgr
+	}
+	if s.engine == nil {
+		s.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	}
+	if s.loop == nil {
+		s.loop = core.NewCommandLoop(s.engine)
 	}
 	_ = os.Remove(s.socketPath)
 
@@ -90,36 +100,27 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		env, decErr := protocol.DecodeCommand(line)
 		if decErr != nil {
-			_ = writeResponse(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{V: protocol.Version, ID: "", Type: "error", Payload: map[string]any{}},
-				OK:       false,
-				Error:    &protocol.ErrorBody{Code: "invalid_command", Message: decErr.Error()},
-			})
+			_ = writeError(conn, "", "invalid_command", decErr.Error())
 			continue
 		}
 
 		switch protocol.CommandType(env.Type) {
 		case protocol.CmdPing:
-			_ = writeResponse(conn, protocol.ResponseEnvelope{
+			_ = writeOK(conn, protocol.ResponseEnvelope{
 				Envelope: protocol.Envelope{
 					V:       protocol.Version,
 					ID:      env.ID,
 					Type:    "pong",
 					Payload: map[string]any{"message": "pong"},
 				},
-				OK: true,
 			})
 		case protocol.CmdNewSession:
 			id, err := s.sessions.NewSession()
 			if err != nil {
-				_ = writeResponse(conn, protocol.ResponseEnvelope{
-					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
-					OK:       false,
-					Error:    &protocol.ErrorBody{Code: "session_error", Message: err.Error()},
-				})
+				_ = writeError(conn, env.ID, "session_error", err.Error())
 				continue
 			}
-			_ = writeResponse(conn, protocol.ResponseEnvelope{
+			_ = writeOK(conn, protocol.ResponseEnvelope{
 				Envelope: protocol.Envelope{
 					V:    protocol.Version,
 					ID:   env.ID,
@@ -129,27 +130,18 @@ func (s *Server) handleConn(conn net.Conn) {
 						"active":     true,
 					},
 				},
-				OK: true,
 			})
 		case protocol.CmdSwitchSession:
 			rawID, ok := env.Payload["session_id"].(string)
 			if !ok || rawID == "" {
-				_ = writeResponse(conn, protocol.ResponseEnvelope{
-					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
-					OK:       false,
-					Error:    &protocol.ErrorBody{Code: "invalid_payload", Message: "session_id is required"},
-				})
+				_ = writeError(conn, env.ID, "invalid_payload", "session_id is required")
 				continue
 			}
 			if err := s.sessions.SwitchSession(rawID); err != nil {
-				_ = writeResponse(conn, protocol.ResponseEnvelope{
-					Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
-					OK:       false,
-					Error:    &protocol.ErrorBody{Code: "session_not_found", Message: err.Error()},
-				})
+				_ = writeError(conn, env.ID, "session_not_found", err.Error())
 				continue
 			}
-			_ = writeResponse(conn, protocol.ResponseEnvelope{
+			_ = writeOK(conn, protocol.ResponseEnvelope{
 				Envelope: protocol.Envelope{
 					V:    protocol.Version,
 					ID:   env.ID,
@@ -159,16 +151,110 @@ func (s *Server) handleConn(conn net.Conn) {
 						"active":     true,
 					},
 				},
-				OK: true,
+			})
+		case protocol.CmdPrompt:
+			text, ok := env.Payload["text"].(string)
+			if !ok || text == "" {
+				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
+				continue
+			}
+			if err := s.loop.Prompt(text); err != nil {
+				_ = writeError(conn, env.ID, "command_rejected", err.Error())
+				continue
+			}
+			_ = writeOK(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{
+					V:    protocol.Version,
+					ID:   env.ID,
+					Type: "accepted",
+					Payload: map[string]any{
+						"command": "prompt",
+					},
+				},
+			})
+		case protocol.CmdSteer:
+			text, ok := env.Payload["text"].(string)
+			if !ok || text == "" {
+				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
+				continue
+			}
+			if err := s.loop.Steer(text); err != nil {
+				_ = writeError(conn, env.ID, "command_rejected", err.Error())
+				continue
+			}
+			_ = writeOK(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "steer"}},
+			})
+		case protocol.CmdFollowUp:
+			text, ok := env.Payload["text"].(string)
+			if !ok || text == "" {
+				_ = writeError(conn, env.ID, "invalid_payload", "text is required")
+				continue
+			}
+			if err := s.loop.FollowUp(text); err != nil {
+				_ = writeError(conn, env.ID, "command_rejected", err.Error())
+				continue
+			}
+			_ = writeOK(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "follow_up"}},
+			})
+		case protocol.CmdAbort:
+			if err := s.loop.Abort(); err != nil {
+				_ = writeError(conn, env.ID, "command_rejected", err.Error())
+				continue
+			}
+			_ = writeOK(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "abort"}},
+			})
+		case protocol.CmdSetActiveTools:
+			raw, ok := env.Payload["tools"].([]any)
+			if !ok {
+				_ = writeError(conn, env.ID, "invalid_payload", "tools must be an array")
+				continue
+			}
+			tools := make([]string, 0, len(raw))
+			valid := true
+			for _, item := range raw {
+				name, ok := item.(string)
+				if !ok || name == "" {
+					valid = false
+					break
+				}
+				tools = append(tools, name)
+			}
+			if !valid {
+				_ = writeError(conn, env.ID, "invalid_payload", "tools must be string array")
+				continue
+			}
+			if err := s.engine.SetActiveTools(tools); err != nil {
+				_ = writeError(conn, env.ID, "command_rejected", err.Error())
+				continue
+			}
+			_ = writeOK(conn, protocol.ResponseEnvelope{
+				Envelope: protocol.Envelope{
+					V:       protocol.Version,
+					ID:      env.ID,
+					Type:    "accepted",
+					Payload: map[string]any{"command": "set_active_tools", "count": len(tools)},
+				},
 			})
 		default:
-			_ = writeResponse(conn, protocol.ResponseEnvelope{
-				Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
-				OK:       false,
-				Error:    &protocol.ErrorBody{Code: "not_implemented", Message: "command not implemented yet"},
-			})
+			_ = writeError(conn, env.ID, "not_implemented", "command not implemented yet")
 		}
 	}
+}
+
+func writeOK(conn net.Conn, resp protocol.ResponseEnvelope) error {
+	resp.OK = true
+	return writeResponse(conn, resp)
+}
+
+func writeError(conn net.Conn, id, code, message string) error {
+	return writeResponse(conn, protocol.ResponseEnvelope{
+		Envelope: protocol.Envelope{V: protocol.Version, ID: id, Type: "error", Payload: map[string]any{}},
+		OK:       false,
+		Error:    &protocol.ErrorBody{Code: code, Message: message},
+	})
 }
 
 func writeResponse(conn net.Conn, resp protocol.ResponseEnvelope) error {

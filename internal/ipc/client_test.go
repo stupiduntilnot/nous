@@ -2,16 +2,37 @@ package ipc
 
 import (
 	"context"
+	"fmt"
 	"net"
-	"path/filepath"
+	"os"
 	"testing"
 	"time"
 
+	"oh-my-agent/internal/core"
+	"oh-my-agent/internal/provider"
 	"oh-my-agent/internal/protocol"
 )
 
+type blockingExecutor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingExecutor) Prompt(ctx context.Context, _ string, _ string) (string, error) {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-b.release:
+		return "ok", nil
+	}
+}
+
 func TestCorectlPing(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "core.sock")
+	socket := testSocketPath(t)
 	srv := NewServer(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -43,7 +64,7 @@ func TestCorectlPing(t *testing.T) {
 }
 
 func TestSessionNewAndSwitch(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "core.sock")
+	socket := testSocketPath(t)
 	srv := NewServer(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -93,7 +114,7 @@ func TestSessionNewAndSwitch(t *testing.T) {
 }
 
 func TestSwitchSessionNotFound(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "core.sock")
+	socket := testSocketPath(t)
 	srv := NewServer(socket)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -129,6 +150,152 @@ func TestSwitchSessionNotFound(t *testing.T) {
 	}
 }
 
+func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	exec := &blockingExecutor{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}, 4),
+	}
+	srv.loop = core.NewCommandLoop(exec)
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "r1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello"},
+	})
+	if err != nil {
+		t.Fatalf("prompt command failed: %v", err)
+	}
+	if !promptResp.OK || promptResp.Type != "accepted" || promptResp.ID != "r1" {
+		t.Fatalf("unexpected prompt response: %+v", promptResp)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(time.Second):
+		t.Fatalf("prompt did not start execution")
+	}
+
+	steerResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "r2",
+		Type:    string(protocol.CmdSteer),
+		Payload: map[string]any{"text": "focus"},
+	})
+	if err != nil {
+		t.Fatalf("steer command failed: %v", err)
+	}
+	if !steerResp.OK || steerResp.ID != "r2" {
+		t.Fatalf("unexpected steer response: %+v", steerResp)
+	}
+
+	followResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "r3",
+		Type:    string(protocol.CmdFollowUp),
+		Payload: map[string]any{"text": "and then"},
+	})
+	if err != nil {
+		t.Fatalf("follow_up command failed: %v", err)
+	}
+	if !followResp.OK || followResp.ID != "r3" {
+		t.Fatalf("unexpected follow_up response: %+v", followResp)
+	}
+
+	abortResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "r4",
+		Type:    string(protocol.CmdAbort),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("abort command failed: %v", err)
+	}
+	if !abortResp.OK || abortResp.ID != "r4" {
+		t.Fatalf("unexpected abort response: %+v", abortResp)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestPromptValidationErrorHasRequestID(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "bad-text",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("prompt command failed: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected prompt with empty payload to fail")
+	}
+	if resp.ID != "bad-text" {
+		t.Fatalf("expected request id echo, got %q", resp.ID)
+	}
+	if resp.Error == nil || resp.Error.Code != "invalid_payload" {
+		t.Fatalf("unexpected error body: %+v", resp.Error)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestAbortWithoutActiveRunReturnsRejected(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "abort-empty",
+		Type:    string(protocol.CmdAbort),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("abort command failed: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected abort to fail without active run")
+	}
+	if resp.Error == nil || resp.Error.Code != "command_rejected" {
+		t.Fatalf("expected command_rejected error code, got %+v", resp.Error)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func waitForSocket(socket string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -140,4 +307,11 @@ func waitForSocket(socket string, timeout time.Duration) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return context.DeadlineExceeded
+}
+
+func testSocketPath(t *testing.T) string {
+	t.Helper()
+	path := fmt.Sprintf("/tmp/oma-%d.sock", time.Now().UnixNano())
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return path
 }
