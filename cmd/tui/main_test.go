@@ -20,6 +20,7 @@ func TestParseInput(t *testing.T) {
 		{in: "new", wantCmd: "new_session"},
 		{in: "switch sess-1", wantCmd: "switch_session"},
 		{in: "branch sess-1", wantCmd: "branch_session"},
+		{in: "set_active_tools ", wantCmd: "set_active_tools"},
 		{in: "set_active_tools tool_a tool_b", wantCmd: "set_active_tools"},
 		{in: "ext hello", wantCmd: "extension_command"},
 		{in: "ext hello {\"x\":1}", wantCmd: "extension_command"},
@@ -64,12 +65,6 @@ func TestParseInputExtInvalidPayload(t *testing.T) {
 	}
 }
 
-func TestParseInputSetActiveToolsRequiresArgs(t *testing.T) {
-	if _, _, _, err := parseInput("set_active_tools "); err == nil {
-		t.Fatalf("expected set_active_tools arg error")
-	}
-}
-
 func TestParseInputPromptAsyncPayload(t *testing.T) {
 	_, payload, _, err := parseInput("prompt_async hello")
 	if err != nil {
@@ -78,5 +73,19 @@ func TestParseInputPromptAsyncPayload(t *testing.T) {
 	wait, _ := payload["wait"].(bool)
 	if wait {
 		t.Fatalf("expected wait=false for prompt_async")
+	}
+}
+
+func TestParseInputSetActiveToolsClear(t *testing.T) {
+	_, payload, _, err := parseInput("set_active_tools ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tools, ok := payload["tools"].([]any)
+	if !ok {
+		t.Fatalf("missing tools payload: %+v", payload)
+	}
+	if len(tools) != 0 {
+		t.Fatalf("expected empty tool list, got: %+v", tools)
 	}
 }

@@ -133,7 +133,7 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 	case strings.HasPrefix(line, "set_active_tools "):
 		rest := strings.TrimSpace(strings.TrimPrefix(line, "set_active_tools "))
 		if rest == "" {
-			return "", nil, false, fmt.Errorf("at least one tool is required")
+			return string(protocol.CmdSetActiveTools), map[string]any{"tools": []any{}}, false, nil
 		}
 		parts := strings.Fields(rest)
 		tools := make([]any, 0, len(parts))

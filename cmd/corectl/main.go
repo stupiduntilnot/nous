@@ -89,8 +89,8 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 		}
 		return string(protocol.CmdBranchSession), map[string]any{"parent_id": args[1]}, nil
 	case "set_active_tools":
-		if len(args) < 2 {
-			return "", nil, fmt.Errorf("set_active_tools requires at least one tool name")
+		if len(args) == 1 {
+			return string(protocol.CmdSetActiveTools), map[string]any{"tools": []any{}}, nil
 		}
 		tools := make([]any, 0, len(args)-1)
 		for _, t := range args[1:] {
