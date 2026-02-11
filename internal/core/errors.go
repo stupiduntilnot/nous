@@ -38,9 +38,14 @@ func (e *AppError) MarshalJSON() ([]byte, error) {
 	type wire struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
+		Cause   string `json:"cause,omitempty"`
 	}
 	if e == nil {
 		return json.Marshal(wire{})
 	}
-	return json.Marshal(wire{Code: e.Code, Message: e.Message})
+	w := wire{Code: e.Code, Message: e.Message}
+	if e.Cause != nil {
+		w.Cause = e.Cause.Error()
+	}
+	return json.Marshal(w)
 }

@@ -35,7 +35,7 @@ func TestErrorEnvelope(t *testing.T) {
 	if decoded["message"] != "failed to read command" {
 		t.Fatalf("unexpected message: %#v", decoded["message"])
 	}
-	if _, exists := decoded["cause"]; exists {
-		t.Fatalf("cause should not be serialized")
+	if decoded["cause"] != "socket closed" {
+		t.Fatalf("unexpected cause: %#v", decoded["cause"])
 	}
 }

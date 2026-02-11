@@ -139,7 +139,7 @@ func (s *Server) handleConn(conn net.Conn) {
 					respCh <- protocol.ResponseEnvelope{
 						Envelope: protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "error", Payload: map[string]any{}},
 						OK:       false,
-						Error:    &protocol.ErrorBody{Code: "internal_error", Message: fmt.Sprintf("panic: %v", r)},
+						Error:    &protocol.ErrorBody{Code: "internal_error", Message: "internal panic", Cause: fmt.Sprintf("%v", r)},
 					}
 				}
 			}()
@@ -315,11 +315,11 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 	sessionID, err := s.ensureActiveSession()
 	if err != nil {
-		return responseErr(reqID, "session_error", err.Error())
+		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
 	promptWithContext, err := s.promptWithSessionContext(sessionID, text)
 	if err != nil {
-		return responseErr(reqID, "session_error", err.Error())
+		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
 	}
 
 	events := make([]core.Event, 0, 16)
@@ -331,10 +331,10 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 	runID := fmt.Sprintf("sync-%d", time.Now().UnixNano())
 	out, err := s.engine.Prompt(context.Background(), runID, promptWithContext)
 	if err != nil {
-		return responseErr(reqID, "provider_error", err.Error())
+		return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
 	}
 	if err := s.appendTurnRecord(runID, string(core.TurnPrompt), text, out); err != nil {
-		return responseErr(reqID, "session_error", err.Error())
+		return responseErrWithCause(reqID, "session_error", "failed to persist session records", err)
 	}
 	return responseOK(protocol.Envelope{
 		V:    protocol.Version,
@@ -436,6 +436,14 @@ func responseErr(id, code, message string) protocol.ResponseEnvelope {
 		OK:       false,
 		Error:    &protocol.ErrorBody{Code: code, Message: message},
 	}
+}
+
+func responseErrWithCause(id, code, message string, cause error) protocol.ResponseEnvelope {
+	resp := responseErr(id, code, message)
+	if cause != nil && resp.Error != nil {
+		resp.Error.Cause = cause.Error()
+	}
+	return resp
 }
 
 func writeResponse(conn net.Conn, resp protocol.ResponseEnvelope) error {

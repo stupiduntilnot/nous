@@ -105,7 +105,8 @@
                 "required": ["code", "message"],
                 "properties": {
                   "code": { "type": "string" },
-                  "message": { "type": "string" }
+                  "message": { "type": "string" },
+                  "cause": { "type": "string" }
                 }
               }
             }

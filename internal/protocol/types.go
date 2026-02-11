@@ -52,6 +52,7 @@ type Envelope struct {
 type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Cause   string `json:"cause,omitempty"`
 }
 
 type ResponseEnvelope struct {
