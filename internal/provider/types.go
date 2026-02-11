@@ -8,6 +8,7 @@ const (
 	EventStart     EventType = "start"
 	EventTextDelta EventType = "text_delta"
 	EventToolCall  EventType = "tool_call"
+	EventAwaitNext EventType = "await_next_turn"
 	EventDone      EventType = "done"
 	EventError     EventType = "error"
 )
@@ -21,6 +22,7 @@ type ToolCall struct {
 type Request struct {
 	Prompt      string
 	ActiveTools []string
+	ToolResults []string
 }
 
 type Event struct {

@@ -81,6 +81,7 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 
 		var decoded struct {
 			Choices []struct {
+				FinishReason string `json:"finish_reason"`
 				Message struct {
 					Content   string `json:"content"`
 					ToolCalls []struct {
@@ -103,6 +104,7 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 			return
 		}
 		msg := decoded.Choices[0].Message
+		finishReason := decoded.Choices[0].FinishReason
 		for _, tc := range msg.ToolCalls {
 			args := map[string]any{}
 			if strings.TrimSpace(tc.Function.Arguments) != "" {
@@ -122,6 +124,9 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 		}
 		if msg.Content != "" {
 			out <- Event{Type: EventTextDelta, Delta: msg.Content}
+		}
+		if finishReason == "tool_calls" {
+			out <- Event{Type: EventAwaitNext}
 		}
 		out <- Event{Type: EventDone}
 	}()

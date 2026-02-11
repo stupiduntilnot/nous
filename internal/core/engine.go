@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"oh-my-agent/internal/extension"
@@ -124,34 +125,63 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		Prompt:      prompt,
 		ActiveTools: e.activeToolNames(),
 	}
-	for ev := range e.provider.Stream(ctx, req) {
-		switch ev.Type {
-		case provider.EventTextDelta:
-			final += ev.Delta
-			if err := e.runtime.MessageUpdate(assistantID, ev.Delta); err != nil {
-				return "", err
+	for step := 0; step < 8; step++ {
+		awaitNext := false
+		stepToolResults := make([]string, 0, 4)
+
+		for ev := range e.provider.Stream(ctx, req) {
+			switch ev.Type {
+			case provider.EventTextDelta:
+				final += ev.Delta
+				if err := e.runtime.MessageUpdate(assistantID, ev.Delta); err != nil {
+					return "", err
+				}
+			case provider.EventToolCall:
+				res, err := e.executeToolCall(ctx, ev.ToolCall)
+				if err != nil {
+					return "", err
+				}
+				final += res
+				stepToolResults = append(stepToolResults, fmt.Sprintf("%s => %s", ev.ToolCall.Name, res))
+				if err := e.runtime.MessageUpdate(assistantID, res); err != nil {
+					return "", err
+				}
+			case provider.EventAwaitNext:
+				awaitNext = true
+			case provider.EventError:
+				if ev.Err != nil {
+					return "", ev.Err
+				}
+				return "", fmt.Errorf("provider_error")
 			}
-		case provider.EventToolCall:
-			res, err := e.executeToolCall(ctx, ev.ToolCall)
-			if err != nil {
-				return "", err
-			}
-			final += res
-			if err := e.runtime.MessageUpdate(assistantID, res); err != nil {
-				return "", err
-			}
-		case provider.EventError:
-			if ev.Err != nil {
-				return "", ev.Err
-			}
-			return "", fmt.Errorf("provider_error")
 		}
+		if awaitNext && len(stepToolResults) > 0 {
+			req.ToolResults = append(req.ToolResults, stepToolResults...)
+			req.Prompt = appendToolResultsToPrompt(req.Prompt, stepToolResults)
+			continue
+		}
+		break
 	}
 
 	if err := e.runtime.MessageEnd(assistantID); err != nil {
 		return "", err
 	}
 	return final, nil
+}
+
+func appendToolResultsToPrompt(prompt string, toolResults []string) string {
+	if len(toolResults) == 0 {
+		return prompt
+	}
+	var b strings.Builder
+	b.WriteString(prompt)
+	b.WriteString("\n\nTool results:\n")
+	for _, line := range toolResults {
+		b.WriteString("- ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (string, error) {

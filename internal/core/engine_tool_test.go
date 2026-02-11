@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"oh-my-agent/internal/provider"
@@ -106,5 +107,54 @@ func TestInactiveToolCallIsRejected(t *testing.T) {
 	}
 	if _, err := e.Prompt(context.Background(), "run-inactive", "x"); err == nil {
 		t.Fatalf("expected inactive tool call to fail")
+	}
+}
+
+type awaitNextProvider struct {
+	calls []provider.Request
+}
+
+func (p *awaitNextProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
+	p.calls = append(p.calls, req)
+	out := make(chan provider.Event)
+	go func() {
+		defer close(out)
+		if len(p.calls) == 1 {
+			out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t1", Name: "first"}}
+			out <- provider.Event{Type: provider.EventAwaitNext}
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "final-answer"}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func TestAwaitNextTurnLoopsWithToolResults(t *testing.T) {
+	r := NewRuntime()
+	p := &awaitNextProvider{}
+	e := NewEngine(r, p)
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "tool-ok", nil
+		}},
+	})
+
+	out, err := e.Prompt(context.Background(), "run-await-next", "hello")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if len(p.calls) != 2 {
+		t.Fatalf("expected two provider calls, got %d", len(p.calls))
+	}
+	if len(p.calls[1].ToolResults) != 1 || p.calls[1].ToolResults[0] != "first => tool-ok" {
+		t.Fatalf("unexpected tool results in second call: %+v", p.calls[1].ToolResults)
+	}
+	if !strings.Contains(p.calls[1].Prompt, "Tool results:") {
+		t.Fatalf("expected second prompt to include tool results, got: %q", p.calls[1].Prompt)
+	}
+	if out != "tool-okfinal-answer" {
+		t.Fatalf("unexpected output: %q", out)
 	}
 }

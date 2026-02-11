@@ -49,6 +49,7 @@ func TestOpenAIAdapterToolCalls(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{
+					"finish_reason": "tool_calls",
 					"message": map[string]any{
 						"tool_calls": []map[string]any{
 							{
@@ -83,6 +84,9 @@ func TestOpenAIAdapterToolCalls(t *testing.T) {
 	}
 	if got, _ := evs[1].ToolCall.Arguments["q"].(string); got != "go" {
 		t.Fatalf("unexpected tool call args: %+v", evs[1].ToolCall.Arguments)
+	}
+	if evs[2].Type != EventAwaitNext {
+		t.Fatalf("expected await-next event, got %+v", evs[2])
 	}
 }
 
