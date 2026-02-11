@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"oh-my-agent/internal/builtins"
 	"oh-my-agent/internal/core"
 	"oh-my-agent/internal/extension"
 	"oh-my-agent/internal/ipc"
@@ -31,6 +33,11 @@ func main() {
 		log.Fatalf("provider init failed: %v", err)
 	}
 	engine := core.NewEngine(core.NewRuntime(), p)
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("resolve cwd failed: %v", err)
+	}
+	engine.SetTools(builtins.DefaultTools(cwd))
 	extMgr := extension.NewManager()
 	if *enableDemoExt {
 		registerDemoExtension(extMgr)
