@@ -76,6 +76,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools
 - [ ] TUI connects and shows `status: connected`
 - [ ] `status` command shows current session (`session: ...` or `session: (none)`)
 - [ ] TUI command parsing works for `prompt/prompt_async/new/switch/branch/set_active_tools/ext`
+- [ ] `prompt_async` accepted payload contains `session_id`, and subsequent `status` shows that session
 - [ ] TUI renders `status/warning/error` lines from sync prompt events
 
 ```bash
