@@ -54,6 +54,7 @@ require_test ./internal/ipc TestDispatchAsyncPromptAcceptedIncludesSessionID
 require_test ./internal/ipc TestDispatchAcceptsProtocolCommandExamplePayloadShapes
 require_test ./internal/protocol TestProtocolSchemaValidation
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
+require_test ./internal/protocol TestProtocolExamplesResponsesNDJSON
 require_test ./cmd/tui TestRenderResultRendersStatusWarningErrorEvents
 
 echo "[gate] run targeted phase checks"
