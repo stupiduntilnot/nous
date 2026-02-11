@@ -53,3 +53,33 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestDispatchAsyncPromptAcceptedIncludesSessionID(t *testing.T) {
+	base := testWorkDir(t)
+	srv := NewServer(filepath.Join(base, "core.sock"))
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new session manager failed: %v", err)
+	}
+	srv.SetSessionManager(mgr)
+
+	e := core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	e.SetExtensionManager(extension.NewManager())
+	srv.SetEngine(e, core.NewCommandLoop(e))
+
+	resp := srv.dispatch(protocol.Envelope{
+		ID:      "prompt-async",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello", "wait": false},
+	})
+	if !resp.OK || resp.Type != "accepted" {
+		t.Fatalf("unexpected async prompt response: %+v", resp)
+	}
+	if cmd, _ := resp.Payload["command"].(string); cmd != "prompt" {
+		t.Fatalf("unexpected accepted command payload: %+v", resp.Payload)
+	}
+	if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+		t.Fatalf("async accepted payload missing session_id: %+v", resp.Payload)
+	}
+}
