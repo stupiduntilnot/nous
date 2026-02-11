@@ -1,3 +1,3 @@
 {"v":"1","id":"cmd-1","type":"pong","payload":{"message":"pong"},"ok":true}
-{"v":"1","id":"cmd-2","type":"accepted","payload":{"command":"prompt"},"ok":true}
+{"v":"1","id":"cmd-2","type":"accepted","payload":{"command":"prompt","session_id":"sess-123"},"ok":true}
 {"v":"1","id":"cmd-11","type":"error","payload":{},"ok":false,"error":{"code":"command_rejected","message":"missing payload field: text","cause":"invalid_payload"}}

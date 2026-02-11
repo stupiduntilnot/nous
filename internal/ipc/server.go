@@ -250,26 +250,31 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 					"active":     true,
 				},
 			})
-		case protocol.CmdPrompt:
-			text, ok := env.Payload["text"].(string)
-			if !ok || text == "" {
-				return responseErr(env.ID, "invalid_payload", "text is required")
-			}
-			wait, _ := env.Payload["wait"].(bool)
-			if wait {
-				return s.promptSync(env.ID, text)
-			}
-			if err := s.loop.Prompt(text); err != nil {
-				return responseErr(env.ID, "command_rejected", err.Error())
-			}
-			return responseOK(protocol.Envelope{
-				V:    protocol.Version,
-				ID:   env.ID,
-				Type: "accepted",
-				Payload: map[string]any{
-					"command": "prompt",
-				},
-			})
+	case protocol.CmdPrompt:
+		text, ok := env.Payload["text"].(string)
+		if !ok || text == "" {
+			return responseErr(env.ID, "invalid_payload", "text is required")
+		}
+		wait, _ := env.Payload["wait"].(bool)
+		if wait {
+			return s.promptSync(env.ID, text)
+		}
+		sessionID, err := s.ensureActiveSession()
+		if err != nil {
+			return responseErrWithCause(env.ID, "session_error", "session operation failed", err)
+		}
+		if err := s.loop.Prompt(text); err != nil {
+			return responseErr(env.ID, "command_rejected", err.Error())
+		}
+		return responseOK(protocol.Envelope{
+			V:    protocol.Version,
+			ID:   env.ID,
+			Type: "accepted",
+			Payload: map[string]any{
+				"command":    "prompt",
+				"session_id": sessionID,
+			},
+		})
 		case protocol.CmdSteer:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {

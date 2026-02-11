@@ -946,6 +946,9 @@ func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
 	if !resp.OK || resp.Type != "accepted" {
 		t.Fatalf("unexpected async prompt response: %+v", resp)
 	}
+	if gotSID, _ := resp.Payload["session_id"].(string); gotSID != sessionID {
+		t.Fatalf("async accepted session_id mismatch: got=%q want=%q payload=%+v", gotSID, sessionID, resp.Payload)
+	}
 
 	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
 	if err != nil {
@@ -973,6 +976,55 @@ func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
 	}
 
 	t.Fatalf("session records not persisted in time")
+}
+
+func TestAsyncPromptAutoCreatesSessionAndReturnsSessionID(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-auto-session",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "auto session prompt"},
+	})
+	if err != nil {
+		t.Fatalf("async prompt failed: %v", err)
+	}
+	if !resp.OK || resp.Type != "accepted" {
+		t.Fatalf("unexpected async prompt response: %+v", resp)
+	}
+	sessionID, _ := resp.Payload["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("missing session_id in async response payload: %+v", resp.Payload)
+	}
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		records, _, err := mgr.Recover(sessionID)
+		if err == nil && len(records) >= 2 {
+			cancel()
+			if err := <-errCh; err != nil {
+				t.Fatalf("server returned error: %v", err)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("session records not persisted in time for auto-created session")
 }
 
 func TestCommandTimeoutReturnsStandardError(t *testing.T) {
