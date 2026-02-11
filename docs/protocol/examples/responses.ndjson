@@ -2,4 +2,5 @@
 {"v":"1","id":"cmd-2","type":"accepted","payload":{"command":"prompt","session_id":"sess-123"},"ok":true}
 {"v":"1","id":"cmd-3","type":"session","payload":{"session_id":"sess-123","active":true},"ok":true}
 {"v":"1","id":"cmd-4","type":"result","payload":{"output":"hello","events":[],"session_id":"sess-123"},"ok":true}
+{"v":"1","id":"cmd-5","type":"extension_result","payload":{"echo":"hello"},"ok":true}
 {"v":"1","id":"cmd-11","type":"error","payload":{},"ok":false,"error":{"code":"command_rejected","message":"missing payload field: text","cause":"invalid_payload"}}

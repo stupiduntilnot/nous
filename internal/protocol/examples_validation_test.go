@@ -121,6 +121,19 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		if _, ok := resp.Payload["output"].(string); !ok {
 			t.Fatalf("response line %d result payload requires output", line)
 		}
+		if _, ok := resp.Payload["events"].([]any); !ok {
+			t.Fatalf("response line %d result payload requires events array", line)
+		}
+		if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+			t.Fatalf("response line %d result payload requires session_id", line)
+		}
+	case "session":
+		if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+			t.Fatalf("response line %d session payload requires session_id", line)
+		}
+		if _, ok := resp.Payload["active"].(bool); !ok {
+			t.Fatalf("response line %d session payload requires active boolean", line)
+		}
 	default:
 		// keep examples permissive for other success envelopes (session/extension_result)
 	}
