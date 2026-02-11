@@ -10,7 +10,8 @@ OPENAI_API_KEY=dummy go run ./cmd/core \
   --socket /tmp/pi-core.sock \
   --provider openai \
   --model qwen2.5-coder:7b \
-  --api-base http://127.0.0.1:11434
+  --api-base http://127.0.0.1:11434 \
+  --command-timeout 5s
 ```
 
 ## 1. Basic IPC
@@ -18,7 +19,7 @@ OPENAI_API_KEY=dummy go run ./cmd/core \
 - [ ] `corectl ping` returns `pong`
 
 ```bash
-go run ./cmd/corectl --socket /tmp/pi-core.sock ping
+go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s ping
 ```
 
 ## 2. Prompt Flow
@@ -27,8 +28,8 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock ping
 - [ ] async prompt returns accepted payload (`{"command":"prompt"}`)
 
 ```bash
-go run ./cmd/corectl --socket /tmp/pi-core.sock prompt "say hello"
-go run ./cmd/corectl --socket /tmp/pi-core.sock prompt_async "say hello"
+go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt "say hello"
+go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt_async "say hello"
 ```
 
 ## 3. Session Flow
