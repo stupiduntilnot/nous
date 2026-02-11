@@ -396,6 +396,68 @@ func TestExtensionCommandNotFound(t *testing.T) {
 	}
 }
 
+func TestSetActiveToolsCommand(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	e := core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	e.SetTools([]core.Tool{
+		core.ToolFunc{ToolName: "tool_a", Run: func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil }},
+		core.ToolFunc{ToolName: "tool_b", Run: func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil }},
+	})
+	srv.engine = e
+	srv.loop = core.NewCommandLoop(e)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	okResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "tools-ok",
+		Type:    string(protocol.CmdSetActiveTools),
+		Payload: map[string]any{"tools": []any{"tool_a"}},
+	})
+	if err != nil {
+		t.Fatalf("set_active_tools failed: %v", err)
+	}
+	if !okResp.OK {
+		t.Fatalf("expected set_active_tools success, got: %+v", okResp)
+	}
+
+	badPayloadResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "tools-bad-payload",
+		Type:    string(protocol.CmdSetActiveTools),
+		Payload: map[string]any{"tools": "tool_a"},
+	})
+	if err != nil {
+		t.Fatalf("set_active_tools bad payload failed: %v", err)
+	}
+	if badPayloadResp.OK || badPayloadResp.Error == nil || badPayloadResp.Error.Code != "invalid_payload" {
+		t.Fatalf("expected invalid_payload error, got: %+v", badPayloadResp)
+	}
+
+	missingToolResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "tools-missing",
+		Type:    string(protocol.CmdSetActiveTools),
+		Payload: map[string]any{"tools": []any{"unknown_tool"}},
+	})
+	if err != nil {
+		t.Fatalf("set_active_tools missing tool failed: %v", err)
+	}
+	if missingToolResp.OK || missingToolResp.Error == nil || missingToolResp.Error.Code != "command_rejected" {
+		t.Fatalf("expected command_rejected error, got: %+v", missingToolResp)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)

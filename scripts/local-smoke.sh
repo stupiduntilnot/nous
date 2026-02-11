@@ -36,7 +36,7 @@ if [[ ! -S "$SOCKET" ]]; then
 fi
 
 OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt "Reply with exactly: core-local-ok")
-echo "$OUT" | rg -q '"output": "core-local-ok"' || {
+echo "$OUT" | rg -qi '"output": "core-local-ok"' || {
   echo "unexpected local model output: $OUT" >&2
   exit 1
 }
