@@ -15,6 +15,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"abort"}, wantCmd: "abort"},
 		{args: []string{"new"}, wantCmd: "new_session"},
 		{args: []string{"switch", "sess-1"}, wantCmd: "switch_session"},
+		{args: []string{"branch", "sess-1"}, wantCmd: "branch_session"},
 		{args: []string{"set_active_tools", "a", "b"}, wantCmd: "set_active_tools"},
 		{args: []string{"prompt"}, wantErr: true},
 	}

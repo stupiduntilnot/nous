@@ -197,6 +197,25 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 					"active":     true,
 				},
 			})
+		case protocol.CmdBranchSession:
+			rawParentID, ok := env.Payload["parent_id"].(string)
+			if !ok || rawParentID == "" {
+				return responseErr(env.ID, "invalid_payload", "parent_id is required")
+			}
+			id, err := s.sessions.BranchFrom(rawParentID)
+			if err != nil {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			return responseOK(protocol.Envelope{
+				V:    protocol.Version,
+				ID:   env.ID,
+				Type: "session",
+				Payload: map[string]any{
+					"session_id": id,
+					"parent_id":  rawParentID,
+					"active":     true,
+				},
+			})
 		case protocol.CmdPrompt:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {

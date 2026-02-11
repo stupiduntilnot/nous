@@ -173,6 +173,60 @@ func TestSwitchSessionNotFound(t *testing.T) {
 	}
 }
 
+func TestBranchSession(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	newResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "new-parent",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	})
+	if err != nil || !newResp.OK {
+		t.Fatalf("new_session failed: resp=%+v err=%v", newResp, err)
+	}
+	parentID, _ := newResp.Payload["session_id"].(string)
+	if parentID == "" {
+		t.Fatalf("expected parent session id")
+	}
+
+	branchResp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "branch-1",
+		Type: string(protocol.CmdBranchSession),
+		Payload: map[string]any{
+			"parent_id": parentID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("branch_session failed: %v", err)
+	}
+	if !branchResp.OK || branchResp.Type != "session" {
+		t.Fatalf("unexpected branch_session response: %+v", branchResp)
+	}
+	branchID, _ := branchResp.Payload["session_id"].(string)
+	if branchID == "" || branchID == parentID {
+		t.Fatalf("invalid branch session id: %q", branchID)
+	}
+	if gotParent, _ := branchResp.Payload["parent_id"].(string); gotParent != parentID {
+		t.Fatalf("unexpected parent_id: got=%q want=%q", gotParent, parentID)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)

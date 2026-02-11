@@ -18,6 +18,7 @@ func TestParseInput(t *testing.T) {
 		{in: "abort", wantCmd: "abort"},
 		{in: "new", wantCmd: "new_session"},
 		{in: "switch sess-1", wantCmd: "switch_session"},
+		{in: "branch sess-1", wantCmd: "branch_session"},
 		{in: "quit", wantQ: true},
 		{in: "prompt ", wantErr: true},
 	}

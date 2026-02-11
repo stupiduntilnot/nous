@@ -13,6 +13,7 @@ This table tracks semantic compatibility targets against `pi-mono` runtime behav
 | `set_active_tools` updates model-visible tool set | yes (runtime-specific timing) | same intent | aligned-with-note |
 | `new_session` resets context | yes | same | aligned |
 | `switch_session` switches persisted context | yes | same | aligned |
+| `branch_session` forks context from a parent session | yes (session-tree semantics) | same | aligned |
 
 ## Event Lifecycle
 

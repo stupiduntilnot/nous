@@ -20,6 +20,7 @@ const (
 	CmdSetActiveTools CommandType = "set_active_tools"
 	CmdNewSession     CommandType = "new_session"
 	CmdSwitchSession  CommandType = "switch_session"
+	CmdBranchSession  CommandType = "branch_session"
 )
 
 const (
@@ -59,7 +60,7 @@ type ResponseEnvelope struct {
 }
 
 var validCommands = map[CommandType]struct{}{
-	CmdPing: {}, CmdPrompt: {}, CmdSteer: {}, CmdFollowUp: {}, CmdAbort: {}, CmdSetActiveTools: {}, CmdNewSession: {}, CmdSwitchSession: {},
+	CmdPing: {}, CmdPrompt: {}, CmdSteer: {}, CmdFollowUp: {}, CmdAbort: {}, CmdSetActiveTools: {}, CmdNewSession: {}, CmdSwitchSession: {}, CmdBranchSession: {},
 }
 
 var validEvents = map[EventType]struct{}{

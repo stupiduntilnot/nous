@@ -77,6 +77,11 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			return "", nil, fmt.Errorf("switch requires session id")
 		}
 		return string(protocol.CmdSwitchSession), map[string]any{"session_id": args[1]}, nil
+	case "branch":
+		if len(args) != 2 {
+			return "", nil, fmt.Errorf("branch requires parent session id")
+		}
+		return string(protocol.CmdBranchSession), map[string]any{"parent_id": args[1]}, nil
 	case "set_active_tools":
 		if len(args) < 2 {
 			return "", nil, fmt.Errorf("set_active_tools requires at least one tool name")
@@ -114,5 +119,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  abort")
 	fmt.Fprintln(os.Stderr, "  new")
 	fmt.Fprintln(os.Stderr, "  switch <session_id>")
+	fmt.Fprintln(os.Stderr, "  branch <parent_session_id>")
 	fmt.Fprintln(os.Stderr, "  set_active_tools <tool...>")
 }

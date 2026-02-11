@@ -117,6 +117,12 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 			return "", nil, false, fmt.Errorf("session id is required")
 		}
 		return string(protocol.CmdSwitchSession), map[string]any{"session_id": id}, false, nil
+	case strings.HasPrefix(line, "branch "):
+		id := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+		if id == "" {
+			return "", nil, false, fmt.Errorf("parent session id is required")
+		}
+		return string(protocol.CmdBranchSession), map[string]any{"parent_id": id}, false, nil
 	default:
 		return "", nil, false, nil
 	}
@@ -131,6 +137,7 @@ func printHelp() {
 	fmt.Println("  abort")
 	fmt.Println("  new")
 	fmt.Println("  switch <session_id>")
+	fmt.Println("  branch <parent_session_id>")
 	fmt.Println("  status")
 	fmt.Println("  help")
 	fmt.Println("  quit")

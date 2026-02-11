@@ -131,7 +131,7 @@
 - `follow_up`
 - `abort`
 - `set_active_tools`
-- `new_session` / `switch_session`
+- `new_session` / `switch_session` / `branch_session`
 
 2. 事件通道
 - agent_start / agent_end

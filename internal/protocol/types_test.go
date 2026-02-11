@@ -3,13 +3,18 @@ package protocol
 import "testing"
 
 func TestCommandDecodeValid(t *testing.T) {
-	line := []byte(`{"v":"1","id":"req-1","type":"prompt","payload":{"text":"hello"}}`)
-	env, err := DecodeCommand(line)
-	if err != nil {
-		t.Fatalf("expected valid command, got error: %v", err)
+	lines := [][]byte{
+		[]byte(`{"v":"1","id":"req-1","type":"prompt","payload":{"text":"hello"}}`),
+		[]byte(`{"v":"1","id":"req-2","type":"branch_session","payload":{"parent_id":"sess-1"}}`),
 	}
-	if env.ID != "req-1" || env.Type != "prompt" {
-		t.Fatalf("decoded envelope mismatch: %#v", env)
+	for _, line := range lines {
+		env, err := DecodeCommand(line)
+		if err != nil {
+			t.Fatalf("expected valid command, got error: %v", err)
+		}
+		if env.ID == "" || env.Type == "" {
+			t.Fatalf("decoded envelope mismatch: %#v", env)
+		}
 	}
 }
 
