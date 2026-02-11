@@ -25,7 +25,8 @@
     "pong": ["message"],
     "accepted:prompt": ["command", "session_id"],
     "result": ["output", "events", "session_id"],
-    "session": ["session_id"]
+    "session": ["session_id", "active"],
+    "extension_result": []
   },
   "paths": {
     "/command": {

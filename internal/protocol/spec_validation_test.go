@@ -54,6 +54,8 @@ func TestProtocolSchemaValidation(t *testing.T) {
 	assertRequiredField(t, respReqs, "result", "events")
 	assertRequiredField(t, respReqs, "result", "session_id")
 	assertRequiredField(t, respReqs, "session", "session_id")
+	assertRequiredField(t, respReqs, "session", "active")
+	assertCommandKeyExists(t, respReqs, "extension_result")
 
 	components := doc["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
@@ -181,5 +183,12 @@ func assertNotRequiredField(t *testing.T, reqs map[string]any, cmd, field string
 	}
 	if slices.Contains(fields, field) {
 		t.Fatalf("payload requirements for %q should not contain %q", cmd, field)
+	}
+}
+
+func assertCommandKeyExists(t *testing.T, reqs map[string]any, cmd string) {
+	t.Helper()
+	if _, ok := reqs[cmd]; !ok {
+		t.Fatalf("requirements missing key %q", cmd)
 	}
 }
