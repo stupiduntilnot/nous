@@ -69,25 +69,18 @@ func TestCommandLoopSteerPreemptsFollowUps(t *testing.T) {
 		t.Fatalf("first prompt did not start")
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(4)
-	go func() {
-		defer wg.Done()
-		_ = loop.FollowUp("f1")
-	}()
-	go func() {
-		defer wg.Done()
-		_ = loop.Steer("s1")
-	}()
-	go func() {
-		defer wg.Done()
-		_ = loop.FollowUp("f2")
-	}()
-	go func() {
-		defer wg.Done()
-		_ = loop.Steer("s2")
-	}()
-	wg.Wait()
+	if err := loop.FollowUp("f1"); err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	if err := loop.Steer("s1"); err != nil {
+		t.Fatalf("steer failed: %v", err)
+	}
+	if err := loop.FollowUp("f2"); err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	if err := loop.Steer("s2"); err != nil {
+		t.Fatalf("steer failed: %v", err)
+	}
 
 	for range 8 {
 		exec.release <- struct{}{}

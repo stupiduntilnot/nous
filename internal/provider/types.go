@@ -18,6 +18,11 @@ type ToolCall struct {
 	Arguments map[string]any
 }
 
+type Request struct {
+	Prompt      string
+	ActiveTools []string
+}
+
 type Event struct {
 	Type     EventType
 	Delta    string
@@ -26,5 +31,5 @@ type Event struct {
 }
 
 type Adapter interface {
-	Stream(ctx context.Context, prompt string) <-chan Event
+	Stream(ctx context.Context, req Request) <-chan Event
 }

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"oh-my-agent/internal/provider"
@@ -12,17 +13,46 @@ type Engine struct {
 	runtime  *Runtime
 	provider provider.Adapter
 	tools    map[string]Tool
+	active   map[string]struct{}
 }
 
 func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
-	return &Engine{runtime: runtime, provider: p, tools: map[string]Tool{}}
+	return &Engine{
+		runtime:  runtime,
+		provider: p,
+		tools:    map[string]Tool{},
+		active:   map[string]struct{}{},
+	}
 }
 
 func (e *Engine) SetTools(tools []Tool) {
 	e.tools = map[string]Tool{}
+	e.active = map[string]struct{}{}
 	for _, t := range tools {
 		e.tools[t.Name()] = t
+		e.active[t.Name()] = struct{}{}
 	}
+}
+
+func (e *Engine) SetActiveTools(names []string) error {
+	next := map[string]struct{}{}
+	for _, name := range names {
+		if _, ok := e.tools[name]; !ok {
+			return fmt.Errorf("tool_not_registered: %s", name)
+		}
+		next[name] = struct{}{}
+	}
+	e.active = next
+	return nil
+}
+
+func (e *Engine) activeToolNames() []string {
+	out := make([]string, 0, len(e.active))
+	for name := range e.active {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, error) {
@@ -50,7 +80,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	}
 
 	var final string
-	for ev := range e.provider.Stream(ctx, prompt) {
+	req := provider.Request{
+		Prompt:      prompt,
+		ActiveTools: e.activeToolNames(),
+	}
+	for ev := range e.provider.Stream(ctx, req) {
 		switch ev.Type {
 		case provider.EventTextDelta:
 			final += ev.Delta
@@ -86,6 +120,9 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	}
 	defer func() { _ = e.runtime.ToolExecutionEnd(call.ID, call.Name) }()
 
+	if _, active := e.active[call.Name]; !active {
+		return "", fmt.Errorf("tool_not_active: %s", call.Name)
+	}
 	tool, ok := e.tools[call.Name]
 	if !ok {
 		return "", fmt.Errorf("tool_not_found: %s", call.Name)
