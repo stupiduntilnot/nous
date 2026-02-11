@@ -14,6 +14,7 @@ import (
 
 func main() {
 	socket := flag.String("socket", "/tmp/pi-core.sock", "uds socket path")
+	requestTimeout := flag.Duration("request-timeout", 5*time.Second, "request timeout (e.g. 5s, 500ms)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -29,11 +30,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	resp, err := ipc.SendCommand(*socket, protocol.Envelope{
+	resp, err := ipc.SendCommandWithTimeout(*socket, protocol.Envelope{
 		ID:      fmt.Sprintf("corectl-%d", time.Now().UnixNano()),
 		Type:    cmd,
 		Payload: payload,
-	})
+	}, *requestTimeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "request failed: %v\n", err)
 		os.Exit(1)

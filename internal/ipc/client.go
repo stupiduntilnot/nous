@@ -11,11 +11,19 @@ import (
 )
 
 func SendCommand(socketPath string, cmd protocol.Envelope) (protocol.ResponseEnvelope, error) {
-	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
+	return SendCommandWithTimeout(socketPath, cmd, 2*time.Second)
+}
+
+func SendCommandWithTimeout(socketPath string, cmd protocol.Envelope, timeout time.Duration) (protocol.ResponseEnvelope, error) {
+	if timeout <= 0 {
+		return protocol.ResponseEnvelope{}, fmt.Errorf("invalid_timeout")
+	}
+	conn, err := net.DialTimeout("unix", socketPath, timeout)
 	if err != nil {
 		return protocol.ResponseEnvelope{}, fmt.Errorf("dial uds: %w", err)
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	if cmd.V == "" {
 		cmd.V = protocol.Version

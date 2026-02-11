@@ -855,6 +855,39 @@ func TestCommandTimeoutReturnsStandardError(t *testing.T) {
 	}
 }
 
+func TestSendCommandWithTimeoutDeadline(t *testing.T) {
+	socket := testSocketPath(t)
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		time.Sleep(200 * time.Millisecond)
+	}()
+
+	_, err = SendCommandWithTimeout(socket, protocol.Envelope{
+		ID:      "deadline-1",
+		Type:    string(protocol.CmdPing),
+		Payload: map[string]any{},
+	}, 50*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "i/o timeout") {
+		t.Fatalf("expected i/o timeout error, got: %v", err)
+	}
+	<-done
+}
+
 func TestCommandPanicReturnsInternalError(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
