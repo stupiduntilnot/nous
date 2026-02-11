@@ -58,6 +58,14 @@ func (s *Server) SetSessionManager(mgr *session.Manager) {
 	s.sessions = mgr
 }
 
+func (s *Server) SetCommandTimeout(d time.Duration) error {
+	if d <= 0 {
+		return fmt.Errorf("invalid_timeout")
+	}
+	s.timeout = d
+	return nil
+}
+
 func (s *Server) SetLogWriter(w io.Writer) {
 	if w == nil {
 		s.logWriter = io.Discard

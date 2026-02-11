@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+func TestSetCommandTimeoutValidation(t *testing.T) {
+	srv := NewServer("/tmp/oma-timeout-test.sock")
+	if err := srv.SetCommandTimeout(1500 * time.Millisecond); err != nil {
+		t.Fatalf("expected valid timeout, got error: %v", err)
+	}
+	if srv.timeout != 1500*time.Millisecond {
+		t.Fatalf("timeout not applied: %v", srv.timeout)
+	}
+	if err := srv.SetCommandTimeout(0); err == nil {
+		t.Fatalf("expected invalid timeout error")
+	}
+}
+
 func TestCorePingPong(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "core.sock")
 	srv := NewServer(socket)

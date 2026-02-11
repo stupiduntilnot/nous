@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"oh-my-agent/internal/core"
 	"oh-my-agent/internal/extension"
@@ -18,6 +19,7 @@ func main() {
 	providerName := flag.String("provider", "mock", "provider: mock|openai|gemini")
 	model := flag.String("model", "", "provider model name")
 	apiBase := flag.String("api-base", "", "optional provider API base URL")
+	commandTimeout := flag.Duration("command-timeout", 3*time.Second, "ipc command timeout (e.g. 3s, 500ms)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -32,6 +34,9 @@ func main() {
 	loop := core.NewCommandLoop(engine)
 
 	srv := ipc.NewServer(*socket)
+	if err := srv.SetCommandTimeout(*commandTimeout); err != nil {
+		log.Fatalf("invalid command timeout: %v", err)
+	}
 	srv.SetEngine(engine, loop)
 	if err := srv.Serve(ctx); err != nil {
 		log.Fatalf("core server failed: %v", err)
