@@ -1,0 +1,142 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Oh-My-Agent UDS NDJSON Protocol",
+    "version": "0.1.0",
+    "description": "OpenAPI-style schema for command/response/event envelopes over UDS + NDJSON framing."
+  },
+  "x-transport": {
+    "type": "uds",
+    "framing": "ndjson"
+  },
+  "paths": {
+    "/command": {
+      "post": {
+        "summary": "Send one command envelope",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandEnvelope"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/event": {
+      "get": {
+        "summary": "Read event envelopes",
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EnvelopeBase": {
+        "type": "object",
+        "required": ["v", "id", "type", "payload"],
+        "properties": {
+          "v": { "type": "string", "const": "1" },
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "payload": { "type": "object" },
+          "ts": { "type": "string" }
+        }
+      },
+      "CommandEnvelope": {
+        "allOf": [
+          { "$ref": "#/components/schemas/EnvelopeBase" },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "ping",
+                  "prompt",
+                  "steer",
+                  "follow_up",
+                  "abort",
+                  "set_active_tools",
+                  "new_session",
+                  "switch_session"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ResponseEnvelope": {
+        "allOf": [
+          { "$ref": "#/components/schemas/EnvelopeBase" },
+          {
+            "type": "object",
+            "required": ["ok"],
+            "properties": {
+              "ok": { "type": "boolean" },
+              "error": {
+                "type": "object",
+                "required": ["code", "message"],
+                "properties": {
+                  "code": { "type": "string" },
+                  "message": { "type": "string" }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "EventEnvelope": {
+        "allOf": [
+          { "$ref": "#/components/schemas/EnvelopeBase" },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "agent_start",
+                  "agent_end",
+                  "turn_start",
+                  "turn_end",
+                  "message_start",
+                  "message_update",
+                  "message_end",
+                  "tool_execution_start",
+                  "tool_execution_update",
+                  "tool_execution_end",
+                  "status",
+                  "warning",
+                  "error"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
