@@ -55,6 +55,15 @@ func TestProtocolSchemaValidation(t *testing.T) {
 			t.Fatalf("command enum has unknown command %q", g)
 		}
 	}
+
+	resp := schemas["ResponseEnvelope"].(map[string]any)
+	respAllOf := resp["allOf"].([]any)
+	respProps := respAllOf[1].(map[string]any)["properties"].(map[string]any)
+	errObj := respProps["error"].(map[string]any)
+	errProps := errObj["properties"].(map[string]any)
+	if _, ok := errProps["cause"]; !ok {
+		t.Fatalf("response error schema missing optional cause field")
+	}
 }
 
 func TestPiMonoSemanticCompatibility(t *testing.T) {
