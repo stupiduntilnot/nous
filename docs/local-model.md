@@ -48,14 +48,40 @@
 
 ## 4. 最小可用操作（Ollama 示例）
 
-### 4.1 启动本地模型服务
+### 4.1 安装 Ollama（开发机）
+
+macOS（Homebrew）：
+
+```bash
+brew install ollama
+```
+
+Linux：
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+安装验收：
+
+```bash
+ollama --version
+```
+
+### 4.2 启动本地模型服务与下载模型
 
 ```bash
 ollama serve
 ollama pull qwen2.5-coder:7b
 ```
 
-### 4.2 启动 Core（连接本地服务）
+可选验收：
+
+```bash
+ollama list
+```
+
+### 4.3 启动 Core（连接本地服务）
 
 注意：当前代码会请求 `<api-base>/v1/chat/completions`，所以 `api-base` 传主机根地址，不要再额外带 `/v1`。
 
@@ -68,7 +94,7 @@ go run ./cmd/core \
   --api-base http://127.0.0.1:11434
 ```
 
-### 4.3 发送请求
+### 4.4 发送请求
 
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock prompt "用一句话介绍你自己"

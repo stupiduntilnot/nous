@@ -13,6 +13,15 @@
 
 ## A. 工程初始化（必须先完成）
 
+### A0. 本地模型运行时准备（推荐）
+- 任务：
+  - 安装本地推理服务 `Ollama`（开发默认）
+  - 拉取至少一个本地模型（如 `qwen2.5-coder:7b`）
+- 验收：
+  - `ollama --version` 可执行
+  - `ollama pull qwen2.5-coder:7b` 成功
+  - `ollama list` 中可见已下载模型
+
 ### A1. 初始化 Go module 与目录结构
 - 任务：
   - 初始化 `go.mod`
