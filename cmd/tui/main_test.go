@@ -19,6 +19,7 @@ func TestParseInput(t *testing.T) {
 		{in: "new", wantCmd: "new_session"},
 		{in: "switch sess-1", wantCmd: "switch_session"},
 		{in: "branch sess-1", wantCmd: "branch_session"},
+		{in: "set_active_tools tool_a tool_b", wantCmd: "set_active_tools"},
 		{in: "ext hello", wantCmd: "extension_command"},
 		{in: "ext hello {\"x\":1}", wantCmd: "extension_command"},
 		{in: "quit", wantQ: true},
@@ -59,5 +60,11 @@ func TestParseInputExtPayload(t *testing.T) {
 func TestParseInputExtInvalidPayload(t *testing.T) {
 	if _, _, _, err := parseInput("ext hello {oops"); err == nil {
 		t.Fatalf("expected invalid json payload error")
+	}
+}
+
+func TestParseInputSetActiveToolsRequiresArgs(t *testing.T) {
+	if _, _, _, err := parseInput("set_active_tools "); err == nil {
+		t.Fatalf("expected set_active_tools arg error")
 	}
 }
