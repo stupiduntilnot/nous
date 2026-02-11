@@ -50,6 +50,7 @@ require_test ./internal/ipc TestCorePingPong
 require_test ./internal/ipc TestSteerPreemptsFollowUpOverIPC
 require_test ./internal/ipc TestAsyncPromptAutoCreatesSessionAndReturnsSessionID
 require_test ./internal/ipc TestDispatchAsyncPromptAcceptedIncludesSessionID
+require_test ./internal/ipc TestDispatchAcceptsProtocolCommandExamplePayloadShapes
 require_test ./internal/protocol TestProtocolSchemaValidation
 require_test ./internal/protocol TestProtocolExamplesCommandsNDJSON
 require_test ./cmd/tui TestRenderResultRendersStatusWarningErrorEvents
