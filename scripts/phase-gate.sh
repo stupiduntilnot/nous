@@ -38,6 +38,7 @@ require_file scripts/extension-smoke.sh
 require_file scripts/protocol-compat-smoke.sh
 require_file scripts/tui-smoke.sh
 require_file scripts/smoke.sh
+require_file scripts/pingpong.sh
 rg -q 'UDS \+ NDJSON' docs/req.md docs/dev.md
 
 echo "[gate] verify critical test inventory"

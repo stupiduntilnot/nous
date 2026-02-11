@@ -13,6 +13,7 @@ ci:
 	go vet ./...
 	go test ./...
 	./scripts/phase-gate.sh
+	./scripts/pingpong.sh
 	./scripts/local-smoke.sh
 	./scripts/session-smoke.sh
 	./scripts/extension-smoke.sh
