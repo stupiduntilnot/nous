@@ -1,0 +1,16 @@
+{"v":"1","id":"evt-r1","type":"agent_start","payload":{"run_id":"run-sample"}}
+{"v":"1","id":"evt-r2","type":"turn_start","payload":{"run_id":"run-sample","turn_id":"1"}}
+{"v":"1","id":"evt-r3","type":"message_start","payload":{"run_id":"run-sample","turn_id":"1","message_id":"user-1","role":"user"}}
+{"v":"1","id":"evt-r4","type":"message_end","payload":{"run_id":"run-sample","turn_id":"1","message_id":"user-1"}}
+{"v":"1","id":"evt-r5","type":"message_start","payload":{"run_id":"run-sample","turn_id":"1","message_id":"assistant-1","role":"assistant"}}
+{"v":"1","id":"evt-r6","type":"tool_execution_start","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t1","tool_name":"first"}}
+{"v":"1","id":"evt-r7","type":"tool_execution_update","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t1","tool_name":"first","delta":"first-ok"}}
+{"v":"1","id":"evt-r8","type":"tool_execution_end","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t1","tool_name":"first"}}
+{"v":"1","id":"evt-r9","type":"message_update","payload":{"run_id":"run-sample","turn_id":"1","message_id":"assistant-1","delta":"first-ok"}}
+{"v":"1","id":"evt-r10","type":"tool_execution_start","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t2","tool_name":"second"}}
+{"v":"1","id":"evt-r11","type":"tool_execution_update","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t2","tool_name":"second","delta":"second-ok"}}
+{"v":"1","id":"evt-r12","type":"tool_execution_end","payload":{"run_id":"run-sample","turn_id":"1","tool_call_id":"t2","tool_name":"second"}}
+{"v":"1","id":"evt-r13","type":"message_update","payload":{"run_id":"run-sample","turn_id":"1","message_id":"assistant-1","delta":"second-ok"}}
+{"v":"1","id":"evt-r14","type":"message_end","payload":{"run_id":"run-sample","turn_id":"1","message_id":"assistant-1"}}
+{"v":"1","id":"evt-r15","type":"turn_end","payload":{"run_id":"run-sample","turn_id":"1"}}
+{"v":"1","id":"evt-r16","type":"agent_end","payload":{"run_id":"run-sample"}}
