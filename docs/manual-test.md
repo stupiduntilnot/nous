@@ -89,10 +89,12 @@ go run ./cmd/tui /tmp/pi-core.sock
 - [ ] `make e2e-tui-evidence` generates a transcript under `artifacts/`
 - [ ] `make phase-gate` passes
 - [ ] `make ci` passes
+- [ ] `make release-gate` passes (one-shot release check)
 
 ```bash
 make e2e-pingpong
 make e2e-tui-evidence
 make phase-gate
 make ci
+make release-gate
 ```

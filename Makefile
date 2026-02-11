@@ -1,4 +1,4 @@
-.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
+.PHONY: build test lint ci release-gate phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
 
 build:
 	go build ./...
@@ -21,6 +21,10 @@ ci:
 	./scripts/protocol-compat-smoke.sh
 	./scripts/tui-smoke.sh
 	./scripts/smoke.sh
+
+release-gate:
+	$(MAKE) ci
+	$(MAKE) e2e-tui-evidence
 
 phase-gate:
 	./scripts/phase-gate.sh

@@ -277,3 +277,4 @@
   - 文档与实现一致（协议无漂移）
   - `make ci` 通过（含 local/session/extension/smoke e2e）
   - 需要证据时可执行 `make e2e-tui-evidence` 产出 `artifacts/tui-evidence-*.log`
+  - 可使用 `make release-gate` 一次性执行 `ci + e2e-tui-evidence`
