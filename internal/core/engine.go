@@ -156,6 +156,9 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 			}
 		}
 		if awaitNext && len(stepToolResults) > 0 {
+			if step == 7 {
+				return "", fmt.Errorf("tool_loop_limit_exceeded")
+			}
 			req.ToolResults = append(req.ToolResults, stepToolResults...)
 			req.Prompt = appendToolResultsToPrompt(req.Prompt, stepToolResults)
 			continue

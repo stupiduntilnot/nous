@@ -158,3 +158,32 @@ func TestAwaitNextTurnLoopsWithToolResults(t *testing.T) {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }
+
+type infiniteAwaitProvider struct{}
+
+func (p infiniteAwaitProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t1", Name: "first"}}
+		out <- provider.Event{Type: provider.EventAwaitNext}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func TestAwaitNextTurnLimitExceeded(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, infiniteAwaitProvider{})
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "tool-ok", nil
+		}},
+	})
+
+	if _, err := e.Prompt(context.Background(), "run-await-limit", "hello"); err == nil {
+		t.Fatalf("expected loop limit error")
+	} else if err.Error() != "tool_loop_limit_exceeded" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
