@@ -11,7 +11,8 @@ OPENAI_API_KEY=dummy go run ./cmd/core \
   --provider openai \
   --model qwen2.5-coder:7b \
   --api-base http://127.0.0.1:11434 \
-  --command-timeout 5s
+  --command-timeout 5s \
+  --enable-demo-extension
 ```
 
 ## 1. Basic IPC
@@ -46,9 +47,11 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock branch <parent_session_id>
 
 ## 4. Extension Command Path
 
+- [ ] `ext echo {"text":"hello"}` returns extension result payload
 - [ ] `ext` on missing command returns `command_rejected`
 
 ```bash
+go run ./cmd/corectl --socket /tmp/pi-core.sock ext echo '{"text":"hello"}'
 go run ./cmd/corectl --socket /tmp/pi-core.sock ext hello
 ```
 

@@ -42,3 +42,43 @@ func TestHeadlessCoreProcess(t *testing.T) {
 		t.Fatalf("headless core exit failed: %v", waitErr)
 	}
 }
+
+func TestHeadlessCoreDemoExtensionCommand(t *testing.T) {
+	socket := testSocketPath(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "go", "run", "../../cmd/core", "-socket", socket, "-enable-demo-extension")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start headless core: %v", err)
+	}
+
+	if err := waitForSocket(socket, 4*time.Second); err != nil {
+		t.Fatalf("headless core not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "headless-ext",
+		Type: string(protocol.CmdExtensionCmd),
+		Payload: map[string]any{
+			"name":    "echo",
+			"payload": map[string]any{"text": "hello"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("extension command failed against headless core: %v", err)
+	}
+	if !resp.OK || resp.Type != "extension_result" {
+		t.Fatalf("unexpected extension response: %+v", resp)
+	}
+	if got, _ := resp.Payload["echo"].(string); got != "hello" {
+		t.Fatalf("unexpected extension payload: %+v", resp.Payload)
+	}
+
+	cancel()
+	waitErr := cmd.Wait()
+	if waitErr != nil && ctx.Err() == nil {
+		t.Fatalf("headless core exit failed: %v", waitErr)
+	}
+}
