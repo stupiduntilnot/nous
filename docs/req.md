@@ -115,6 +115,20 @@
 6. 消息生命周期事件：message_start/message_update/message_end
 7. 队列语义：`steer` 与 `followUp`
 
+### 5.1 Tool Loop 收敛条件（强约束）
+
+1. 单次 `prompt` 不是“只跑一轮模型 + 一次工具调用”，而是一个完整 Agent Run。
+2. Core 必须在同一 Run 内循环执行，直到满足收敛条件才允许 `turn_end/agent_end`。
+3. 每轮循环处理顺序：
+- 先向模型请求 assistant 输出
+- 若 assistant 含 tool calls，则按顺序执行所有 tool calls
+- 将 `tool_result` 回灌上下文后继续下一轮模型请求
+4. 仅在以下条件同时满足时收敛：
+- 当前 assistant 输出不再包含新的 tool calls
+- 没有待处理的队列输入（如 `steer/follow_up` 形成的 pending messages）
+5. 违反上述收敛条件属于实现错误（例如“执行一次 tool call 就结束”）。
+6. `abort` 可打断循环并强制结束当前 Run；除 `abort` 外不得提前终止。
+
 ---
 
 ## 6. 通信与协议要求

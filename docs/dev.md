@@ -174,9 +174,16 @@
 ### D4. 顺序 Tool loop
 - 任务：
   - 读取 assistant tool calls 并顺序执行
-  - 回灌 `ToolResultMessage` 后进入下一 turn
+  - 回灌 `ToolResultMessage` 后进入下一轮模型请求
+  - 在同一 Run 内持续循环，直到满足收敛条件：
+    - assistant 不再产生新的 tool calls
+    - 没有 pending messages（含 `steer/follow_up`）
+  - 除 `abort` 外不得提前结束 run
 - 验收：
   - E2E：`prompt -> toolcall -> toolresult -> next turn` 通过
+  - E2E：多轮 tool calls 链路可自动收敛（不是单次 tool call 后结束）
+  - 单测：存在 pending messages 时不得结束 run
+  - 单测：仅 `abort` 可强制提前终止 run
 
 ### D5. steer / follow_up / abort 语义
 - 任务：
