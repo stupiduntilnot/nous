@@ -1,4 +1,4 @@
-.PHONY: build test lint e2e-pingpong
+.PHONY: build test lint e2e-pingpong e2e-smoke
 
 build:
 	go build ./...
@@ -11,3 +11,6 @@ lint:
 
 e2e-pingpong:
 	./scripts/pingpong.sh
+
+e2e-smoke:
+	./scripts/smoke.sh
