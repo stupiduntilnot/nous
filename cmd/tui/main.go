@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -124,11 +125,25 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 		}
 		return string(protocol.CmdBranchSession), map[string]any{"parent_id": id}, false, nil
 	case strings.HasPrefix(line, "ext "):
-		name := strings.TrimSpace(strings.TrimPrefix(line, "ext "))
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "ext "))
+		if rest == "" {
+			return "", nil, false, fmt.Errorf("extension command name is required")
+		}
+		name := rest
+		payload := map[string]any{}
+		if idx := strings.IndexByte(rest, ' '); idx >= 0 {
+			name = strings.TrimSpace(rest[:idx])
+			raw := strings.TrimSpace(rest[idx+1:])
+			if raw != "" {
+				if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+					return "", nil, false, fmt.Errorf("extension payload must be JSON object: %w", err)
+				}
+			}
+		}
 		if name == "" {
 			return "", nil, false, fmt.Errorf("extension command name is required")
 		}
-		return string(protocol.CmdExtensionCmd), map[string]any{"name": name, "payload": map[string]any{}}, false, nil
+		return string(protocol.CmdExtensionCmd), map[string]any{"name": name, "payload": payload}, false, nil
 	default:
 		return "", nil, false, nil
 	}
@@ -144,7 +159,7 @@ func printHelp() {
 	fmt.Println("  new")
 	fmt.Println("  switch <session_id>")
 	fmt.Println("  branch <parent_session_id>")
-	fmt.Println("  ext <name>")
+	fmt.Println("  ext <name> [json_payload]")
 	fmt.Println("  status")
 	fmt.Println("  help")
 	fmt.Println("  quit")

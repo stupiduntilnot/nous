@@ -20,6 +20,7 @@ func TestParseInput(t *testing.T) {
 		{in: "switch sess-1", wantCmd: "switch_session"},
 		{in: "branch sess-1", wantCmd: "branch_session"},
 		{in: "ext hello", wantCmd: "extension_command"},
+		{in: "ext hello {\"x\":1}", wantCmd: "extension_command"},
 		{in: "quit", wantQ: true},
 		{in: "prompt ", wantErr: true},
 	}
@@ -38,5 +39,25 @@ func TestParseInput(t *testing.T) {
 		if cmd != tc.wantCmd {
 			t.Fatalf("unexpected cmd for %q: got=%q want=%q", tc.in, cmd, tc.wantCmd)
 		}
+	}
+}
+
+func TestParseInputExtPayload(t *testing.T) {
+	cmd, payload, _, err := parseInput("ext hello {\"x\":1}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != "extension_command" {
+		t.Fatalf("unexpected cmd: %q", cmd)
+	}
+	raw, _ := payload["payload"].(map[string]any)
+	if got, _ := raw["x"].(float64); got != 1 {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestParseInputExtInvalidPayload(t *testing.T) {
+	if _, _, _, err := parseInput("ext hello {oops"); err == nil {
+		t.Fatalf("expected invalid json payload error")
 	}
 }
