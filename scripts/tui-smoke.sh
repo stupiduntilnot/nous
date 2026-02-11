@@ -27,12 +27,12 @@ if [[ ! -S "$SOCKET" ]]; then
   exit 1
 fi
 
-OUT=$(printf 'ping\nprompt_async hello-from-tui\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
+OUT=$(printf 'ping\nprompt hello-from-tui\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
 
 echo "$OUT" | rg -q 'status: connected' || { echo "tui did not report connected status" >&2; echo "$OUT" >&2; exit 1; }
 echo "$OUT" | rg -q 'ok: type=pong' || { echo "tui ping did not return pong" >&2; echo "$OUT" >&2; exit 1; }
-echo "$OUT" | rg -q 'ok: type=accepted payload=.*command:prompt' || { echo "tui prompt_async not accepted" >&2; echo "$OUT" >&2; exit 1; }
-echo "$OUT" | rg -q 'session_id:sess-' || { echo "tui prompt_async response missing session_id" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | rg -q 'assistant:' || { echo "tui prompt did not render assistant output" >&2; echo "$OUT" >&2; exit 1; }
+echo "$OUT" | rg -q 'session: sess-' || { echo "tui prompt response missing session_id" >&2; echo "$OUT" >&2; exit 1; }
 echo "$OUT" | rg -q 'session: sess-' || { echo "tui did not show active session id" >&2; echo "$OUT" >&2; exit 1; }
 
 echo "tui smoke ok"

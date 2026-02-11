@@ -59,11 +59,6 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			return "", nil, fmt.Errorf("prompt requires text")
 		}
 		return string(protocol.CmdPrompt), map[string]any{"text": strings.Join(args[1:], " "), "wait": true}, nil
-	case "prompt_async":
-		if len(args) < 2 {
-			return "", nil, fmt.Errorf("prompt_async requires text")
-		}
-		return string(protocol.CmdPrompt), map[string]any{"text": strings.Join(args[1:], " "), "wait": false}, nil
 	case "steer":
 		if len(args) < 2 {
 			return "", nil, fmt.Errorf("steer requires text")
@@ -132,7 +127,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "commands:")
 	fmt.Fprintln(os.Stderr, "  ping")
 	fmt.Fprintln(os.Stderr, "  prompt <text>")
-	fmt.Fprintln(os.Stderr, "  prompt_async <text>")
 	fmt.Fprintln(os.Stderr, "  steer <text>")
 	fmt.Fprintln(os.Stderr, "  follow_up <text>")
 	fmt.Fprintln(os.Stderr, "  abort")

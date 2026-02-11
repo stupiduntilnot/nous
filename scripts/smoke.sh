@@ -30,12 +30,9 @@ fi
 OUT=$(go run ./cmd/corectl --socket "$SOCKET" ping)
 [[ "$OUT" == "pong" ]] || { echo "unexpected ping output: $OUT" >&2; exit 1; }
 
-AUTO_ASYNC_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt_async "hello async auto-session")
-AUTO_ASYNC_SESSION_ID=$(echo "$AUTO_ASYNC_OUT" | rg '"session_id"' | sed -E 's/.*"session_id": "([^"]+)".*/\1/')
-[[ -n "$AUTO_ASYNC_SESSION_ID" ]] || { echo "auto async prompt missing session_id: $AUTO_ASYNC_OUT" >&2; exit 1; }
-
 PROMPT_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt "hello smoke")
 echo "$PROMPT_OUT" | rg -q '"output"' || { echo "prompt output missing: $PROMPT_OUT" >&2; exit 1; }
+echo "$PROMPT_OUT" | rg -q '"session_id"' || { echo "prompt output missing session_id: $PROMPT_OUT" >&2; exit 1; }
 
 NEW_OUT=$(go run ./cmd/corectl --socket "$SOCKET" new)
 SESSION_ID=$(echo "$NEW_OUT" | rg '"session_id"' | sed -E 's/.*"session_id": "([^"]+)".*/\1/')
@@ -43,13 +40,9 @@ SESSION_ID=$(echo "$NEW_OUT" | rg '"session_id"' | sed -E 's/.*"session_id": "([
 
 go run ./cmd/corectl --socket "$SOCKET" switch "$SESSION_ID" >/dev/null
 
-ASYNC_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt_async "hello async smoke")
-echo "$ASYNC_OUT" | rg -q '"command": "prompt"' || {
-  echo "async prompt missing accepted command payload: $ASYNC_OUT" >&2
-  exit 1
-}
-echo "$ASYNC_OUT" | rg -q "\"session_id\": \"$SESSION_ID\"" || {
-  echo "async prompt missing/incorrect session_id: $ASYNC_OUT" >&2
+PROMPT2_OUT=$(go run ./cmd/corectl --socket "$SOCKET" prompt "hello second smoke")
+echo "$PROMPT2_OUT" | rg -q "\"session_id\": \"$SESSION_ID\"" || {
+  echo "prompt missing/incorrect session_id: $PROMPT2_OUT" >&2
   exit 1
 }
 

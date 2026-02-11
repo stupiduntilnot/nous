@@ -55,9 +55,9 @@ require_test ./internal/core TestRuntimeEventSequenceMatchesProtocolExample
 require_test ./internal/core TestPromptEmitsErrorEventOnProviderError
 require_test ./internal/core TestCommandLoopSteerPreemptsFollowUps
 require_test ./internal/ipc TestCorePingPong
-require_test ./internal/ipc TestSteerPreemptsFollowUpOverIPC
-require_test ./internal/ipc TestAsyncPromptAutoCreatesSessionAndReturnsSessionID
-require_test ./internal/ipc TestDispatchAsyncPromptAcceptedIncludesSessionID
+require_test ./internal/ipc TestPromptCommandWithWaitFalseRejectedOverIPC
+require_test ./internal/ipc TestPromptWaitFalseIsRejected
+require_test ./internal/ipc TestDispatchPromptWithWaitFalseIsRejected
 require_test ./internal/ipc TestDispatchAcceptsProtocolCommandExamplePayloadShapes
 require_test ./internal/ipc TestDispatchResponsesSatisfySpecPayloadRequirements
 require_test ./internal/protocol TestProtocolSchemaValidation

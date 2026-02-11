@@ -32,20 +32,19 @@ if [[ ! -S "$SOCKET" ]]; then
   exit 1
 fi
 
-OUT=$(printf 'ping\nprompt_async hello-from-evidence\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
+OUT=$(printf 'ping\nprompt hello-from-evidence\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
 {
   echo "# TUI Evidence"
   echo "timestamp: $STAMP"
   echo "socket: $SOCKET"
-  echo "commands: ping | prompt_async hello-from-evidence | status | quit"
+  echo "commands: ping | prompt hello-from-evidence | status | quit"
   echo "---"
   printf '%s\n' "$OUT"
 } | tee "$OUT_FILE" >/dev/null
 
 echo "$OUT" | rg -q 'status: connected' || { echo "tui evidence missing connected status" >&2; exit 1; }
 echo "$OUT" | rg -q 'ok: type=pong' || { echo "tui evidence missing pong" >&2; exit 1; }
-echo "$OUT" | rg -q 'ok: type=accepted payload=.*command:prompt' || { echo "tui evidence missing prompt accepted" >&2; exit 1; }
-echo "$OUT" | rg -q 'session_id:sess-' || { echo "tui evidence missing accepted session_id" >&2; exit 1; }
+echo "$OUT" | rg -q 'assistant:' || { echo "tui evidence missing assistant output" >&2; exit 1; }
 echo "$OUT" | rg -q 'session: sess-' || { echo "tui evidence missing active session" >&2; exit 1; }
 
 echo "tui evidence saved: $OUT_FILE"

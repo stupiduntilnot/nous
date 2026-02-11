@@ -23,7 +23,7 @@
   },
   "x-response-payload-requirements": {
     "pong": ["message"],
-    "accepted:prompt": ["command", "session_id"],
+    "accepted:set_active_tools": ["command"],
     "result": ["output", "events", "session_id"],
     "session": ["session_id", "active"],
     "extension_result": []

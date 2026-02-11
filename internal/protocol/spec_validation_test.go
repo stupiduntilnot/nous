@@ -49,8 +49,7 @@ func TestProtocolSchemaValidation(t *testing.T) {
 		t.Fatalf("x-response-payload-requirements is missing or invalid")
 	}
 	assertRequiredField(t, respReqs, "pong", "message")
-	assertRequiredField(t, respReqs, "accepted:prompt", "command")
-	assertRequiredField(t, respReqs, "accepted:prompt", "session_id")
+	assertRequiredField(t, respReqs, "accepted:set_active_tools", "command")
 	assertRequiredField(t, respReqs, "result", "output")
 	assertRequiredField(t, respReqs, "result", "events")
 	assertRequiredField(t, respReqs, "result", "session_id")

@@ -51,9 +51,9 @@ func TestDispatchResponsesSatisfySpecPayloadRequirements(t *testing.T) {
 			typeKey: "session",
 		},
 		{
-			name: "accepted_prompt",
-			env: protocol.Envelope{ID: "r-async", Type: string(protocol.CmdPrompt), Payload: map[string]any{"text": "hello", "wait": false}},
-			typeKey: "accepted:prompt",
+			name: "accepted_set_active_tools",
+			env: protocol.Envelope{ID: "r-tools", Type: string(protocol.CmdSetActiveTools), Payload: map[string]any{"tools": []any{}}},
+			typeKey: "accepted:set_active_tools",
 		},
 		{
 			name: "result",
@@ -73,8 +73,8 @@ func TestDispatchResponsesSatisfySpecPayloadRequirements(t *testing.T) {
 			if !resp.OK {
 				t.Fatalf("dispatch failed: %+v", resp)
 			}
-			if tc.typeKey == "accepted:prompt" {
-				if cmd, _ := resp.Payload["command"].(string); cmd != "prompt" {
+			if tc.typeKey == "accepted:set_active_tools" {
+				if cmd, _ := resp.Payload["command"].(string); cmd != "set_active_tools" {
 					t.Fatalf("accepted response command mismatch: %+v", resp.Payload)
 				}
 			}

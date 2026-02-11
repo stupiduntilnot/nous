@@ -112,11 +112,6 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		if cmd == "" {
 			t.Fatalf("response line %d accepted payload requires command", line)
 		}
-		if cmd == "prompt" {
-			if sid, _ := resp.Payload["session_id"].(string); sid == "" {
-				t.Fatalf("response line %d accepted prompt requires session_id", line)
-			}
-		}
 	case "result":
 		if _, ok := resp.Payload["output"].(string); !ok {
 			t.Fatalf("response line %d result payload requires output", line)

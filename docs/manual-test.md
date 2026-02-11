@@ -8,7 +8,7 @@
 ```bash
 OPENAI_API_KEY=dummy go run ./cmd/core \
   --socket /tmp/pi-core.sock \
-  --provider openai \
+  --provider ollama \
   --model qwen2.5-coder:7b \
   --api-base http://127.0.0.1:11434 \
   --command-timeout 5s \
@@ -26,15 +26,14 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s ping
 ## 2. Prompt Flow
 
 - [ ] synchronous prompt returns `output/events/session_id`
-- [ ] async prompt returns accepted payload (`{"command":"prompt","session_id":"..."}`)
-- [ ] async prompt without pre-created session still returns non-empty `session_id`
+- [ ] prompt with `wait=false` is rejected (`command_rejected`)
 - [ ] tool-loop continuation includes `status` event with non-empty `message`
 - [ ] unknown/blocked tool path includes `warning` event with `code/message`
 - [ ] provider failure path returns `provider_error` and carries `cause` when available
 
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt "say hello"
-go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt_async "say hello"
+printf '{"v":"1","id":"rejected-1","type":"prompt","payload":{"text":"say hello","wait":false}}\n' | nc -U /tmp/pi-core.sock
 ```
 
 ## 3. Session Flow
@@ -75,8 +74,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools
 
 - [ ] TUI connects and shows `status: connected`
 - [ ] `status` command shows current session (`session: ...` or `session: (none)`)
-- [ ] TUI command parsing works for `prompt/prompt_async/new/switch/branch/set_active_tools/ext`
-- [ ] `prompt_async` accepted payload contains `session_id`, and subsequent `status` shows that session
+- [ ] TUI command parsing works for `prompt/new/switch/branch/set_active_tools/ext`
 - [ ] TUI renders `status/warning/error` lines from sync prompt events
 
 ```bash

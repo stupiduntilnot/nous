@@ -255,26 +255,18 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		if !ok || text == "" {
 			return responseErr(env.ID, "invalid_payload", "text is required")
 		}
-		wait, _ := env.Payload["wait"].(bool)
-		if wait {
-			return s.promptSync(env.ID, text)
+		wait := true
+		if rawWait, exists := env.Payload["wait"]; exists {
+			b, ok := rawWait.(bool)
+			if !ok {
+				return responseErr(env.ID, "invalid_payload", "wait must be a boolean")
+			}
+			wait = b
 		}
-		sessionID, err := s.ensureActiveSession()
-		if err != nil {
-			return responseErrWithCause(env.ID, "session_error", "session operation failed", err)
+		if !wait {
+			return responseErr(env.ID, "command_rejected", "wait_false_not_supported_use_prompt")
 		}
-		if err := s.loop.Prompt(text); err != nil {
-			return responseErr(env.ID, "command_rejected", err.Error())
-		}
-		return responseOK(protocol.Envelope{
-			V:    protocol.Version,
-			ID:   env.ID,
-			Type: "accepted",
-			Payload: map[string]any{
-				"command":    "prompt",
-				"session_id": sessionID,
-			},
-		})
+		return s.promptSync(env.ID, text)
 		case protocol.CmdSteer:
 			text, ok := env.Payload["text"].(string)
 			if !ok || text == "" {

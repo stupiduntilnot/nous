@@ -549,12 +549,8 @@ func TestSetActiveToolsCommand(t *testing.T) {
 func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
-	exec := &blockingExecutor{
-		started: make(chan struct{}, 1),
-		release: make(chan struct{}, 4),
-	}
-	srv.loop = core.NewCommandLoop(exec)
 	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(srv.engine)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -572,13 +568,8 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt command failed: %v", err)
 	}
-	if !promptResp.OK || promptResp.Type != "accepted" || promptResp.ID != "r1" {
+	if !promptResp.OK || promptResp.Type != "result" || promptResp.ID != "r1" {
 		t.Fatalf("unexpected prompt response: %+v", promptResp)
-	}
-	select {
-	case <-exec.started:
-	case <-time.After(time.Second):
-		t.Fatalf("prompt did not start execution")
 	}
 
 	steerResp, err := SendCommand(socket, protocol.Envelope{
@@ -589,7 +580,7 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("steer command failed: %v", err)
 	}
-	if !steerResp.OK || steerResp.ID != "r2" {
+	if steerResp.OK || steerResp.Error == nil || steerResp.Error.Code != "command_rejected" {
 		t.Fatalf("unexpected steer response: %+v", steerResp)
 	}
 
@@ -601,7 +592,7 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("follow_up command failed: %v", err)
 	}
-	if !followResp.OK || followResp.ID != "r3" {
+	if followResp.OK || followResp.Error == nil || followResp.Error.Code != "command_rejected" {
 		t.Fatalf("unexpected follow_up response: %+v", followResp)
 	}
 
@@ -613,7 +604,7 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("abort command failed: %v", err)
 	}
-	if !abortResp.OK || abortResp.ID != "r4" {
+	if abortResp.OK || abortResp.Error == nil || abortResp.Error.Code != "command_rejected" {
 		t.Fatalf("unexpected abort response: %+v", abortResp)
 	}
 
@@ -623,12 +614,11 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	}
 }
 
-func TestSteerPreemptsFollowUpOverIPC(t *testing.T) {
+func TestPromptCommandWithWaitFalseRejectedOverIPC(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
-	exec := newOrderedExecutor()
-	srv.loop = core.NewCommandLoop(exec)
 	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(srv.engine)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -638,62 +628,21 @@ func TestSteerPreemptsFollowUpOverIPC(t *testing.T) {
 		t.Fatalf("server not ready: %v", err)
 	}
 
-	if _, err := SendCommand(socket, protocol.Envelope{
-		ID:      "p0",
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "p-wait-false",
 		Type:    string(protocol.CmdPrompt),
-		Payload: map[string]any{"text": "p0"},
-	}); err != nil {
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil {
 		t.Fatalf("prompt command failed: %v", err)
 	}
-	select {
-	case <-exec.started:
-	case <-time.After(time.Second):
-		t.Fatalf("first prompt did not start")
+	if resp.OK || resp.Error == nil || resp.Error.Code != "command_rejected" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
-
-	if _, err := SendCommand(socket, protocol.Envelope{
-		ID:      "f1",
-		Type:    string(protocol.CmdFollowUp),
-		Payload: map[string]any{"text": "f1"},
-	}); err != nil {
-		t.Fatalf("follow_up failed: %v", err)
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
 	}
-	if _, err := SendCommand(socket, protocol.Envelope{
-		ID:      "s1",
-		Type:    string(protocol.CmdSteer),
-		Payload: map[string]any{"text": "s1"},
-	}); err != nil {
-		t.Fatalf("steer failed: %v", err)
-	}
-	if _, err := SendCommand(socket, protocol.Envelope{
-		ID:      "f2",
-		Type:    string(protocol.CmdFollowUp),
-		Payload: map[string]any{"text": "f2"},
-	}); err != nil {
-		t.Fatalf("follow_up failed: %v", err)
-	}
-
-	for range 8 {
-		exec.release <- struct{}{}
-	}
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		calls := exec.Calls()
-		if len(calls) >= 4 {
-			if calls[0] != "p0" || calls[1] != "s1" || calls[2] != "f1" || calls[3] != "f2" {
-				t.Fatalf("unexpected execution order: %v", calls)
-			}
-			cancel()
-			if err := <-errCh; err != nil {
-				t.Fatalf("server returned error: %v", err)
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	t.Fatalf("timed out waiting execution order, calls=%v", exec.Calls())
 }
 
 func TestPromptValidationErrorHasRequestID(t *testing.T) {
@@ -909,7 +858,7 @@ func TestPromptWaitIncludesPriorSessionContext(t *testing.T) {
 	}
 }
 
-func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
+func TestPromptPersistsSessionRecords(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")
 	srv := NewServer(socket)
@@ -936,18 +885,18 @@ func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
 	}
 
 	resp, err := SendCommand(socket, protocol.Envelope{
-		ID:      "async-1",
+		ID:      "prompt-1",
 		Type:    string(protocol.CmdPrompt),
-		Payload: map[string]any{"text": "async prompt test"},
+		Payload: map[string]any{"text": "prompt test", "wait": true},
 	})
 	if err != nil {
-		t.Fatalf("async prompt failed: %v", err)
+		t.Fatalf("prompt failed: %v", err)
 	}
-	if !resp.OK || resp.Type != "accepted" {
-		t.Fatalf("unexpected async prompt response: %+v", resp)
+	if !resp.OK || resp.Type != "result" {
+		t.Fatalf("unexpected prompt response: %+v", resp)
 	}
 	if gotSID, _ := resp.Payload["session_id"].(string); gotSID != sessionID {
-		t.Fatalf("async accepted session_id mismatch: got=%q want=%q payload=%+v", gotSID, sessionID, resp.Payload)
+		t.Fatalf("result session_id mismatch: got=%q want=%q payload=%+v", gotSID, sessionID, resp.Payload)
 	}
 
 	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
@@ -978,7 +927,7 @@ func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
 	t.Fatalf("session records not persisted in time")
 }
 
-func TestAsyncPromptAutoCreatesSessionAndReturnsSessionID(t *testing.T) {
+func TestPromptWaitFalseIsRejected(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")
 	srv := NewServer(socket)
@@ -992,39 +941,23 @@ func TestAsyncPromptAutoCreatesSessionAndReturnsSessionID(t *testing.T) {
 	}
 
 	resp, err := SendCommand(socket, protocol.Envelope{
-		ID:      "async-auto-session",
+		ID:      "prompt-wait-false",
 		Type:    string(protocol.CmdPrompt),
-		Payload: map[string]any{"text": "auto session prompt"},
+		Payload: map[string]any{"text": "rejected prompt", "wait": false},
 	})
 	if err != nil {
-		t.Fatalf("async prompt failed: %v", err)
+		t.Fatalf("prompt request failed: %v", err)
 	}
-	if !resp.OK || resp.Type != "accepted" {
-		t.Fatalf("unexpected async prompt response: %+v", resp)
+	if resp.OK || resp.Type != "error" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
-	sessionID, _ := resp.Payload["session_id"].(string)
-	if sessionID == "" {
-		t.Fatalf("missing session_id in async response payload: %+v", resp.Payload)
+	if resp.Error == nil || resp.Error.Code != "command_rejected" {
+		t.Fatalf("unexpected error body: %+v", resp.Error)
 	}
-
-	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
-	if err != nil {
-		t.Fatalf("new manager failed: %v", err)
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		records, _, err := mgr.Recover(sessionID)
-		if err == nil && len(records) >= 2 {
-			cancel()
-			if err := <-errCh; err != nil {
-				t.Fatalf("server returned error: %v", err)
-			}
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	t.Fatalf("session records not persisted in time for auto-created session")
 }
 
 func TestCommandTimeoutReturnsStandardError(t *testing.T) {

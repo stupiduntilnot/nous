@@ -54,7 +54,7 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 	}
 }
 
-func TestDispatchAsyncPromptAcceptedIncludesSessionID(t *testing.T) {
+func TestDispatchPromptWithWaitFalseIsRejected(t *testing.T) {
 	base := testWorkDir(t)
 	srv := NewServer(filepath.Join(base, "core.sock"))
 
@@ -69,17 +69,14 @@ func TestDispatchAsyncPromptAcceptedIncludesSessionID(t *testing.T) {
 	srv.SetEngine(e, core.NewCommandLoop(e))
 
 	resp := srv.dispatch(protocol.Envelope{
-		ID:      "prompt-async",
+		ID:      "prompt-wait-false",
 		Type:    string(protocol.CmdPrompt),
 		Payload: map[string]any{"text": "hello", "wait": false},
 	})
-	if !resp.OK || resp.Type != "accepted" {
-		t.Fatalf("unexpected async prompt response: %+v", resp)
+	if resp.OK || resp.Type != "error" || resp.Error == nil {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
-	if cmd, _ := resp.Payload["command"].(string); cmd != "prompt" {
-		t.Fatalf("unexpected accepted command payload: %+v", resp.Payload)
-	}
-	if sid, _ := resp.Payload["session_id"].(string); sid == "" {
-		t.Fatalf("async accepted payload missing session_id: %+v", resp.Payload)
+	if resp.Error.Code != "command_rejected" {
+		t.Fatalf("unexpected error code: %+v", resp.Error)
 	}
 }
