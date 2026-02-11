@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -146,6 +147,48 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 	evs := collectEvents(a.Stream(context.Background(), Request{
 		Prompt:      "hi",
 		ActiveTools: []string{"tool_a", "tool_b"},
+	}))
+	if len(evs) < 3 || evs[1].Type != EventTextDelta {
+		t.Fatalf("unexpected events: %+v", evs)
+	}
+}
+
+func TestOpenAIAdapterSendsToolResultsAsFollowupContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		rawMsgs, ok := req["messages"].([]any)
+		if !ok || len(rawMsgs) < 2 {
+			t.Fatalf("expected two messages, got: %#v", req["messages"])
+		}
+		last, _ := rawMsgs[len(rawMsgs)-1].(map[string]any)
+		content, _ := last["content"].(string)
+		if !strings.Contains(content, "Tool results:") || !strings.Contains(content, "first => ok") {
+			t.Fatalf("tool results message missing, got: %q", content)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Prompt:      "hi",
+		ToolResults: []string{"first => ok"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
 		t.Fatalf("unexpected events: %+v", evs)

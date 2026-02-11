@@ -48,6 +48,12 @@ func (a *OpenAIAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 				{"role": "user", "content": req.Prompt},
 			},
 		}
+		if len(req.ToolResults) > 0 {
+			payload["messages"] = append(payload["messages"].([]map[string]string), map[string]string{
+				"role":    "user",
+				"content": "Tool results:\n" + strings.Join(req.ToolResults, "\n"),
+			})
+		}
 		if len(req.ActiveTools) > 0 {
 			payload["tools"] = buildOpenAITools(req.ActiveTools)
 		}
