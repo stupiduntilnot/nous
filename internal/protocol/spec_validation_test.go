@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -38,14 +39,20 @@ func TestProtocolSchemaValidation(t *testing.T) {
 	props := allOf[1].(map[string]any)["properties"].(map[string]any)
 	types := props["type"].(map[string]any)["enum"].([]any)
 
-	want := []string{"ping", "prompt", "steer", "follow_up", "abort", "set_active_tools", "new_session", "switch_session"}
 	got := make([]string, 0, len(types))
 	for _, v := range types {
 		got = append(got, v.(string))
 	}
+
+	want := expectedCommands()
 	for _, w := range want {
 		if !slices.Contains(got, w) {
 			t.Fatalf("command enum missing %q", w)
+		}
+	}
+	for _, g := range got {
+		if !slices.Contains(want, g) {
+			t.Fatalf("command enum has unknown command %q", g)
 		}
 	}
 }
@@ -62,6 +69,7 @@ func TestPiMonoSemanticCompatibility(t *testing.T) {
 		"`steer`",
 		"`follow_up`",
 		"`abort`",
+		"`branch_session`",
 		"agent_start/end",
 		"turn_start/end",
 		"message_start/update/end",
@@ -72,4 +80,13 @@ func TestPiMonoSemanticCompatibility(t *testing.T) {
 			t.Fatalf("semantic matrix missing %q", c)
 		}
 	}
+}
+
+func expectedCommands() []string {
+	out := make([]string, 0, len(validCommands))
+	for cmd := range validCommands {
+		out = append(out, fmt.Sprintf("%s", cmd))
+	}
+	slices.Sort(out)
+	return out
 }
