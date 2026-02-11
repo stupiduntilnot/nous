@@ -46,6 +46,7 @@ rg -q 'UDS \+ NDJSON' docs/req.md docs/dev.md
 rg -q '^artifacts/\*\.log$' .gitignore
 rg -q '^e2e-tui-evidence:' Makefile
 rg -q 'scripts/tui-evidence\.sh' Makefile
+rg -q '^release-gate:' Makefile
 
 echo "[gate] verify critical test inventory"
 require_test ./internal/core TestStateTransitions
