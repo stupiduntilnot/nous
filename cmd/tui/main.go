@@ -94,6 +94,8 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 		return string(protocol.CmdAbort), map[string]any{}, false, nil
 	case line == "new":
 		return string(protocol.CmdNewSession), map[string]any{}, false, nil
+	case line == "set_active_tools":
+		return string(protocol.CmdSetActiveTools), map[string]any{"tools": []any{}}, false, nil
 	case strings.HasPrefix(line, "prompt "):
 		text := strings.TrimSpace(strings.TrimPrefix(line, "prompt "))
 		if text == "" {

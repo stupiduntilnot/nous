@@ -20,6 +20,7 @@ func TestParseInput(t *testing.T) {
 		{in: "new", wantCmd: "new_session"},
 		{in: "switch sess-1", wantCmd: "switch_session"},
 		{in: "branch sess-1", wantCmd: "branch_session"},
+		{in: "set_active_tools", wantCmd: "set_active_tools"},
 		{in: "set_active_tools ", wantCmd: "set_active_tools"},
 		{in: "set_active_tools tool_a tool_b", wantCmd: "set_active_tools"},
 		{in: "ext hello", wantCmd: "extension_command"},
