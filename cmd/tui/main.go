@@ -100,6 +100,12 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 			return "", nil, false, fmt.Errorf("prompt text is required")
 		}
 		return string(protocol.CmdPrompt), map[string]any{"text": text, "wait": true}, false, nil
+	case strings.HasPrefix(line, "prompt_async "):
+		text := strings.TrimSpace(strings.TrimPrefix(line, "prompt_async "))
+		if text == "" {
+			return "", nil, false, fmt.Errorf("prompt_async text is required")
+		}
+		return string(protocol.CmdPrompt), map[string]any{"text": text, "wait": false}, false, nil
 	case strings.HasPrefix(line, "steer "):
 		text := strings.TrimSpace(strings.TrimPrefix(line, "steer "))
 		if text == "" {
@@ -164,6 +170,7 @@ func printHelp() {
 	fmt.Println("commands:")
 	fmt.Println("  ping")
 	fmt.Println("  prompt <text>")
+	fmt.Println("  prompt_async <text>")
 	fmt.Println("  steer <text>")
 	fmt.Println("  follow_up <text>")
 	fmt.Println("  abort")

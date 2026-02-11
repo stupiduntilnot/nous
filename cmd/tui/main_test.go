@@ -13,6 +13,7 @@ func TestParseInput(t *testing.T) {
 	}{
 		{in: "ping", wantCmd: "ping"},
 		{in: "prompt hello", wantCmd: "prompt"},
+		{in: "prompt_async hello", wantCmd: "prompt"},
 		{in: "steer focus", wantCmd: "steer"},
 		{in: "follow_up next", wantCmd: "follow_up"},
 		{in: "abort", wantCmd: "abort"},
@@ -66,5 +67,16 @@ func TestParseInputExtInvalidPayload(t *testing.T) {
 func TestParseInputSetActiveToolsRequiresArgs(t *testing.T) {
 	if _, _, _, err := parseInput("set_active_tools "); err == nil {
 		t.Fatalf("expected set_active_tools arg error")
+	}
+}
+
+func TestParseInputPromptAsyncPayload(t *testing.T) {
+	_, payload, _, err := parseInput("prompt_async hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wait, _ := payload["wait"].(bool)
+	if wait {
+		t.Fatalf("expected wait=false for prompt_async")
 	}
 }
