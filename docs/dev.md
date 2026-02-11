@@ -146,6 +146,15 @@
 - 验收：
   - 不依赖真实 API 的 E2E 可跑通一轮
 
+### D3.5 本地模型 Provider 接入（开发默认）
+- 任务：
+  - 增加 OpenAI-compatible provider 接入能力（用于 Ollama/LM Studio/vLLM）
+  - Core 支持 `provider/model/api-base` 启动参数
+  - 补充本地模型接入文档（`docs/local-model.md`）
+- 验收：
+  - 本地模型服务启动后，`corectl prompt` 可拿到模型响应
+  - 不依赖云端 API key 也可完成开发链路联调（占位 key 允许）
+
 ### D4. 顺序 Tool loop
 - 任务：
   - 读取 assistant tool calls 并顺序执行
@@ -255,4 +264,3 @@
 - 验收：
   - 全量回归通过
   - 文档与实现一致（协议无漂移）
-

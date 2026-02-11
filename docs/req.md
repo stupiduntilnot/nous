@@ -68,6 +68,7 @@
 - Session 管理
 - Event Bus
 - Provider Adapter
+  - 本地模型优先通过 OpenAI-compatible endpoint 接入（如 Ollama/LM Studio/vLLM）
 
 2. `IPC Interface Layer`
 - Core 对外控制协议（命令 + 事件）
@@ -85,6 +86,7 @@
 3. 协议稳定优先：先固定内部消息与事件协议，再扩展能力。
 4. 可观测优先：每个 Turn、Tool、Message 都必须可追踪。
 5. 架构自由原则：通信方式可自定义，但 Core 语义必须稳定对齐目标。
+6. 开发成本优先：开发阶段默认优先使用本地模型，云模型仅用于回归验证。
 
 ---
 
@@ -189,7 +191,7 @@
 ### Phase 1：Core Skeleton
 
 1. 建立 Agent loop、Message/Event 模型、Session 模型。
-2. 完成最小 provider adapter 与单 provider 接入。
+2. 完成最小 provider adapter 与单 provider 接入（优先 OpenAI-compatible 本地模型链路）。
 3. 完成顺序 Tool 执行与 ToolResult 回灌。
 4. 落实单写者顺序状态机（并发能力不进入 Core 主语义）。
 
@@ -218,6 +220,7 @@
 5. 可以按 Scenario phase 切换 active tools。
 6. Session 可持久化、可恢复。
 7. Headless 模式可通过 IPC 独立运行，无需 TUI。
+8. 可通过本地模型服务（Ollama/LM Studio/vLLM）完成端到端通信，无需云端 API。
 
 ---
 
