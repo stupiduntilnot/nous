@@ -2,15 +2,14 @@
 
 ## 0. Environment
 
-- [ ] `ollama list` includes `qwen2.5-coder:7b`
-- [ ] Core starts on `/tmp/pi-core.sock` with local model config
+- [ ] `OPENAI_API_KEY` 已设置
+- [ ] Core starts on `/tmp/pi-core.sock` with OpenAI config
 
 ```bash
-OPENAI_API_KEY=dummy go run ./cmd/core \
+go run ./cmd/core \
   --socket /tmp/pi-core.sock \
-  --provider ollama \
-  --model qwen2.5-coder:7b \
-  --api-base http://127.0.0.1:11434 \
+  --provider openai \
+  --model gpt-4o-mini \
   --command-timeout 5s \
   --enable-demo-extension
 ```

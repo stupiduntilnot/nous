@@ -19,7 +19,7 @@ func NewOpenAIAdapter(apiKey, model, baseURL string) (*OpenAIAdapter, error) {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	impl, err := newOpenAICompatAdapter(apiKey, model, baseURL, false)
+	impl, err := newOpenAICompatAdapter(apiKey, model, baseURL)
 	if err != nil {
 		return nil, err
 	}

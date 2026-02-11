@@ -11,8 +11,6 @@ func Build(name, model, baseURL string) (Adapter, error) {
 		return NewMockAdapter(), nil
 	case "openai":
 		return NewOpenAIAdapter(os.Getenv("OPENAI_API_KEY"), model, baseURL)
-	case "ollama":
-		return NewOllamaAdapter(os.Getenv("OLLAMA_API_KEY"), model, baseURL)
 	case "gemini":
 		return NewGeminiAdapter(os.Getenv("GEMINI_API_KEY"), model, baseURL)
 	default:

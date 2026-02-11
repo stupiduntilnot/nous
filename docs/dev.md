@@ -12,20 +12,10 @@
 ## Completion Status
 
 - `A1~H3`: completed and gated by `make release-gate`
-- `A0`: environment prerequisite (Ollama install/model pull) depends on local machine state
 
 ---
 
 ## A. 工程初始化（必须先完成）
-
-### A0. 本地模型运行时准备（推荐）
-- 任务：
-  - 安装本地推理服务 `Ollama`（开发默认）
-  - 拉取至少一个本地模型（如 `qwen2.5-coder:7b`）
-- 验收：
-  - `ollama --version` 可执行
-  - `ollama pull qwen2.5-coder:7b` 成功
-  - `ollama list` 中可见已下载模型
 
 ### A1. 初始化 Go module 与目录结构
 - 任务：
@@ -162,14 +152,12 @@
 - 验收：
   - 不依赖真实 API 的 E2E 可跑通一轮
 
-### D3.5 本地模型 Provider 接入（开发默认）
+### D3.5 OpenAI Provider 接入（开发默认）
 - 任务：
-  - 增加 OpenAI-compatible provider 接入能力（用于 Ollama/LM Studio/vLLM）
+  - 增加 OpenAI provider 接入能力
   - Core 支持 `provider/model/api-base` 启动参数
-  - 补充本地模型接入文档（`docs/local-model.md`）
 - 验收：
-  - 本地模型服务启动后，`corectl prompt` 可拿到模型响应
-  - 不依赖云端 API key 也可完成开发链路联调（占位 key 允许）
+  - 设置 `OPENAI_API_KEY` 后，`corectl prompt` 可拿到模型响应
 
 ### D4. 顺序 Tool loop
 - 任务：

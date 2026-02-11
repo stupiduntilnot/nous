@@ -9,18 +9,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
 )
 
 type openAICompatAdapter struct {
-	apiKey                string
-	model                 string
-	baseURL               string
-	client                *http.Client
-	enableTextToolFallback bool
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
 
-func newOpenAICompatAdapter(apiKey, model, baseURL string, textToolFallback bool) (*openAICompatAdapter, error) {
+func newOpenAICompatAdapter(apiKey, model, baseURL string) (*openAICompatAdapter, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("missing_api_key")
 	}
@@ -31,11 +29,10 @@ func newOpenAICompatAdapter(apiKey, model, baseURL string, textToolFallback bool
 		return nil, fmt.Errorf("missing_api_base")
 	}
 	return &openAICompatAdapter{
-		apiKey:                apiKey,
-		model:                 model,
-		baseURL:               normalizeAPIBase(baseURL),
-		client:                &http.Client{Timeout: 60 * time.Second},
-		enableTextToolFallback: textToolFallback,
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: normalizeAPIBase(baseURL),
+		client:  &http.Client{Timeout: 60 * time.Second},
 	}, nil
 }
 
@@ -126,7 +123,6 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		msg := decoded.Choices[0].Message
 		finishReason := decoded.Choices[0].FinishReason
 
-		emittedToolCall := false
 		for _, tc := range msg.ToolCalls {
 			args := map[string]any{}
 			if strings.TrimSpace(tc.Function.Arguments) != "" {
@@ -143,16 +139,6 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 					Arguments: args,
 				},
 			}
-			emittedToolCall = true
-		}
-
-		if a.enableTextToolFallback && !emittedToolCall && strings.TrimSpace(msg.Content) != "" {
-			if tc, ok := parseTextToolCall(msg.Content, req.ActiveTools); ok {
-				out <- Event{Type: EventToolCall, ToolCall: tc}
-				out <- Event{Type: EventAwaitNext}
-				out <- Event{Type: EventDone}
-				return
-			}
 		}
 
 		if msg.Content != "" {
@@ -164,76 +150,6 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		out <- Event{Type: EventDone}
 	}()
 	return out
-}
-
-func parseTextToolCall(content string, activeTools []string) (ToolCall, bool) {
-	raw := strings.TrimSpace(content)
-	raw = strings.TrimPrefix(raw, "```json")
-	raw = strings.TrimPrefix(raw, "```")
-	raw = strings.TrimSuffix(raw, "```")
-	raw = strings.TrimSpace(raw)
-
-	var obj struct {
-		Name      string         `json:"name"`
-		Arguments map[string]any `json:"arguments"`
-	}
-	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-		return ToolCall{}, false
-	}
-	name := normalizeToolName(strings.TrimSpace(obj.Name), activeTools)
-	if name == "" {
-		return ToolCall{}, false
-	}
-	if obj.Arguments == nil {
-		obj.Arguments = map[string]any{}
-	}
-	return ToolCall{
-		ID:        "toolcall-from-text",
-		Name:      name,
-		Arguments: obj.Arguments,
-	}, true
-}
-
-func normalizeToolName(raw string, activeTools []string) string {
-	if raw == "" {
-		return ""
-	}
-	for _, name := range activeTools {
-		if raw == name {
-			return name
-		}
-	}
-	for _, name := range activeTools {
-		if strings.HasPrefix(raw, name+" ") {
-			return name
-		}
-	}
-	fields := strings.Fields(raw)
-	if len(fields) > 0 {
-		first := fields[0]
-		for _, name := range activeTools {
-			if first == name {
-				return name
-			}
-		}
-	}
-	normalizedRaw := normalizeToolToken(raw)
-	for _, name := range activeTools {
-		if strings.Contains(normalizedRaw, normalizeToolToken(name)) {
-			return name
-		}
-	}
-	return ""
-}
-
-func normalizeToolToken(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 func buildOpenAITools(names []string) []map[string]any {
