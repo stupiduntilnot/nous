@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"oh-my-agent/internal/core"
+	"oh-my-agent/internal/extension"
 	"oh-my-agent/internal/provider"
 	"oh-my-agent/internal/protocol"
 	"oh-my-agent/internal/session"
@@ -67,6 +68,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	if s.engine == nil {
 		s.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+		s.engine.SetExtensionManager(extension.NewManager())
 	}
 	if s.loop == nil {
 		s.loop = core.NewCommandLoop(s.engine)

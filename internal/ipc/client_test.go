@@ -276,6 +276,45 @@ func TestExtensionCommandDispatch(t *testing.T) {
 	}
 }
 
+func TestExtensionCommandNotFound(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "ext-missing",
+		Type: string(protocol.CmdExtensionCmd),
+		Payload: map[string]any{
+			"name":    "missing",
+			"payload": map[string]any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("extension command failed: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected extension command to fail for missing command: %+v", resp)
+	}
+	if resp.Error == nil || resp.Error.Code != "command_rejected" {
+		t.Fatalf("unexpected error body: %+v", resp.Error)
+	}
+	if !strings.Contains(resp.Error.Message, "extension_command_not_found") {
+		t.Fatalf("unexpected error message: %+v", resp.Error)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)

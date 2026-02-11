@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"oh-my-agent/internal/core"
+	"oh-my-agent/internal/extension"
 	"oh-my-agent/internal/ipc"
 	"oh-my-agent/internal/provider"
 )
@@ -27,6 +28,7 @@ func main() {
 		log.Fatalf("provider init failed: %v", err)
 	}
 	engine := core.NewEngine(core.NewRuntime(), p)
+	engine.SetExtensionManager(extension.NewManager())
 	loop := core.NewCommandLoop(engine)
 
 	srv := ipc.NewServer(*socket)
