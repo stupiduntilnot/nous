@@ -62,7 +62,7 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock set_active_tools unknown_tool
 ## 6. TUI Flow
 
 - [ ] TUI connects and shows `status: connected`
-- [ ] TUI command parsing works for `prompt/new/switch/branch/ext`
+- [ ] TUI command parsing works for `prompt/prompt_async/new/switch/branch/set_active_tools/ext`
 
 ```bash
 go run ./cmd/tui /tmp/pi-core.sock
