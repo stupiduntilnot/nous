@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -133,6 +134,33 @@ func TestPiMonoSemanticCompatibility(t *testing.T) {
 		if !strings.Contains(content, c) {
 			t.Fatalf("semantic matrix missing %q", c)
 		}
+	}
+}
+
+func TestCommandPayloadRequirementsCoverAllCommands(t *testing.T) {
+	b, err := os.ReadFile("../../docs/protocol/openapi-like.json")
+	if err != nil {
+		t.Fatalf("failed to read openapi-like spec: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("invalid json spec: %v", err)
+	}
+
+	reqs, ok := doc["x-command-payload-requirements"].(map[string]any)
+	if !ok {
+		t.Fatalf("x-command-payload-requirements is missing or invalid")
+	}
+
+	got := make([]string, 0, len(reqs))
+	for k := range reqs {
+		got = append(got, k)
+	}
+	sort.Strings(got)
+
+	want := expectedCommands()
+	if !slices.Equal(got, want) {
+		t.Fatalf("command payload requirements mismatch\nwant=%v\ngot=%v", want, got)
 	}
 }
 
