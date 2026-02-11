@@ -264,12 +264,12 @@
 ### H1. Phase 1（Core）
 - 验收：
   - D + E 全部通过
-  - `go test ./...` 通过
+  - `make phase-gate` 通过
 
 ### H2. Phase 2（IPC + TUI）
 - 验收：
   - F + G 全部通过
-  - UDS 联调脚本通过
+  - `scripts/pingpong.sh` 与 `scripts/smoke.sh` 通过
 
 ### H3. 回归门禁
 - 验收：

@@ -1,4 +1,4 @@
-.PHONY: build test lint ci e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension
+.PHONY: build test lint ci phase-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension
 
 build:
 	go build ./...
@@ -12,10 +12,14 @@ lint:
 ci:
 	go vet ./...
 	go test ./...
+	./scripts/phase-gate.sh
 	./scripts/local-smoke.sh
 	./scripts/session-smoke.sh
 	./scripts/extension-smoke.sh
 	./scripts/smoke.sh
+
+phase-gate:
+	./scripts/phase-gate.sh
 
 e2e-pingpong:
 	./scripts/pingpong.sh
