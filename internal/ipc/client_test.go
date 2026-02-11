@@ -566,6 +566,72 @@ func TestPromptWaitIncludesPriorSessionContext(t *testing.T) {
 	}
 }
 
+func TestAsyncPromptPersistsSessionRecords(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	newResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "new-async",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	})
+	if err != nil || !newResp.OK {
+		t.Fatalf("new_session failed: resp=%+v err=%v", newResp, err)
+	}
+	sessionID, _ := newResp.Payload["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("missing session id: %+v", newResp.Payload)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-1",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "async prompt test"},
+	})
+	if err != nil {
+		t.Fatalf("async prompt failed: %v", err)
+	}
+	if !resp.OK || resp.Type != "accepted" {
+		t.Fatalf("unexpected async prompt response: %+v", resp)
+	}
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		records, _, err := mgr.Recover(sessionID)
+		if err == nil && len(records) >= 2 {
+			var first map[string]any
+			if err := json.Unmarshal(records[0], &first); err != nil {
+				t.Fatalf("decode first record failed: %v", err)
+			}
+			if first["role"] != "user" {
+				t.Fatalf("expected first role=user, got %v", first["role"])
+			}
+			cancel()
+			if err := <-errCh; err != nil {
+				t.Fatalf("server returned error: %v", err)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("session records not persisted in time")
+}
+
 func TestCommandTimeoutReturnsStandardError(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
