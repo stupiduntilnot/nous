@@ -40,12 +40,14 @@ go run ./cmd/corectl --socket /tmp/pi-core.sock --request-timeout 5s prompt_asyn
 
 - [ ] `new` returns session id
 - [ ] `switch` can switch to existing session
-- [ ] `branch` returns new session id and parent id
+- [ ] `branch` (`session_id`) returns new session id and parent id
+- [ ] raw `branch_session` with legacy `parent_id` is still accepted
 
 ```bash
 go run ./cmd/corectl --socket /tmp/pi-core.sock new
 go run ./cmd/corectl --socket /tmp/pi-core.sock switch <session_id>
 go run ./cmd/corectl --socket /tmp/pi-core.sock branch <session_id>
+printf '{"v":"1","id":"compat-branch","type":"branch_session","payload":{"parent_id":"<session_id>"}}\n' | nc -U /tmp/pi-core.sock
 ```
 
 ## 4. Extension Command Path
