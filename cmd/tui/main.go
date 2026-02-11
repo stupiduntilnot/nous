@@ -177,7 +177,7 @@ func printHelp() {
 	fmt.Println("  new")
 	fmt.Println("  switch <session_id>")
 	fmt.Println("  branch <parent_session_id>")
-	fmt.Println("  set_active_tools <tool...>")
+	fmt.Println("  set_active_tools [tool...]   (no args = clear all)")
 	fmt.Println("  ext <name> [json_payload]")
 	fmt.Println("  status")
 	fmt.Println("  help")

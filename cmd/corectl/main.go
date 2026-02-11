@@ -139,7 +139,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  new")
 	fmt.Fprintln(os.Stderr, "  switch <session_id>")
 	fmt.Fprintln(os.Stderr, "  branch <parent_session_id>")
-	fmt.Fprintln(os.Stderr, "  set_active_tools <tool...>")
+	fmt.Fprintln(os.Stderr, "  set_active_tools [tool...]   (no args = clear all)")
 	fmt.Fprintln(os.Stderr, "  ext <name> [json_payload]")
 }
 
