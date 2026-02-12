@@ -382,6 +382,34 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			Type:    "accepted",
 			Payload: map[string]any{"command": "set_active_tools", "count": len(tools)},
 		})
+	case protocol.CmdSetSteeringMode:
+		mode, ok := env.Payload["mode"].(string)
+		if !ok || mode == "" {
+			return responseErr(env.ID, "invalid_payload", "mode is required")
+		}
+		if err := s.loop.SetSteeringMode(core.QueueMode(mode)); err != nil {
+			return responseErr(env.ID, "invalid_payload", "mode must be one-at-a-time or all")
+		}
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "accepted",
+			Payload: map[string]any{"command": "set_steering_mode", "mode": mode},
+		})
+	case protocol.CmdSetFollowUpMode:
+		mode, ok := env.Payload["mode"].(string)
+		if !ok || mode == "" {
+			return responseErr(env.ID, "invalid_payload", "mode is required")
+		}
+		if err := s.loop.SetFollowUpMode(core.QueueMode(mode)); err != nil {
+			return responseErr(env.ID, "invalid_payload", "mode must be one-at-a-time or all")
+		}
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "accepted",
+			Payload: map[string]any{"command": "set_follow_up_mode", "mode": mode},
+		})
 	case protocol.CmdExtensionCmd:
 		name, ok := env.Payload["name"].(string)
 		if !ok || name == "" {

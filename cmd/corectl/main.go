@@ -92,6 +92,16 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			tools = append(tools, t)
 		}
 		return string(protocol.CmdSetActiveTools), map[string]any{"tools": tools}, nil
+	case "set_steering_mode":
+		if len(args) != 2 {
+			return "", nil, fmt.Errorf("set_steering_mode requires mode (one-at-a-time|all)")
+		}
+		return string(protocol.CmdSetSteeringMode), map[string]any{"mode": args[1]}, nil
+	case "set_follow_up_mode":
+		if len(args) != 2 {
+			return "", nil, fmt.Errorf("set_follow_up_mode requires mode (one-at-a-time|all)")
+		}
+		return string(protocol.CmdSetFollowUpMode), map[string]any{"mode": args[1]}, nil
 	case "ext":
 		if len(args) < 2 {
 			return "", nil, fmt.Errorf("ext requires command name")
@@ -134,6 +144,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  switch <session_id>")
 	fmt.Fprintln(os.Stderr, "  branch <session_id>")
 	fmt.Fprintln(os.Stderr, "  set_active_tools [tool...]   (no args = clear all)")
+	fmt.Fprintln(os.Stderr, "  set_steering_mode <one-at-a-time|all>")
+	fmt.Fprintln(os.Stderr, "  set_follow_up_mode <one-at-a-time|all>")
 	fmt.Fprintln(os.Stderr, "  ext <name> [json_payload]")
 }
 

@@ -173,6 +173,84 @@ func TestCommandLoopCoordinatesSingleRunLifecycleAcrossQueuedTurns(t *testing.T)
 	}
 }
 
+func TestCommandLoopSteerModeAllBatchesQueuedMessages(t *testing.T) {
+	exec := newGatedExecutor()
+	loop := NewCommandLoop(exec)
+	if err := loop.SetSteeringMode(QueueModeAll); err != nil {
+		t.Fatalf("set steering mode failed: %v", err)
+	}
+
+	if _, err := loop.Prompt("p0"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("first prompt did not start")
+	}
+
+	if err := loop.Steer("s1"); err != nil {
+		t.Fatalf("steer s1 failed: %v", err)
+	}
+	if err := loop.Steer("s2"); err != nil {
+		t.Fatalf("steer s2 failed: %v", err)
+	}
+
+	exec.release <- struct{}{}
+	exec.release <- struct{}{}
+	waitLoopIdle(t, loop)
+
+	got := exec.Calls()
+	want := []string{"p0", "s1\ns2"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("unexpected batched steer calls\nwant=%v\ngot=%v", want, got)
+	}
+}
+
+func TestCommandLoopFollowUpModeAllBatchesQueuedMessages(t *testing.T) {
+	exec := newGatedExecutor()
+	loop := NewCommandLoop(exec)
+	if err := loop.SetFollowUpMode(QueueModeAll); err != nil {
+		t.Fatalf("set follow-up mode failed: %v", err)
+	}
+
+	if _, err := loop.Prompt("p0"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("first prompt did not start")
+	}
+
+	if err := loop.FollowUp("f1"); err != nil {
+		t.Fatalf("follow_up f1 failed: %v", err)
+	}
+	if err := loop.FollowUp("f2"); err != nil {
+		t.Fatalf("follow_up f2 failed: %v", err)
+	}
+
+	exec.release <- struct{}{}
+	exec.release <- struct{}{}
+	waitLoopIdle(t, loop)
+
+	got := exec.Calls()
+	want := []string{"p0", "f1\nf2"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("unexpected batched follow-up calls\nwant=%v\ngot=%v", want, got)
+	}
+}
+
+func TestCommandLoopRejectsInvalidQueueMode(t *testing.T) {
+	loop := NewCommandLoop(newGatedExecutor())
+	if err := loop.SetSteeringMode(QueueMode("bad")); err == nil {
+		t.Fatalf("expected invalid steering mode to fail")
+	}
+	if err := loop.SetFollowUpMode(QueueMode("bad")); err == nil {
+		t.Fatalf("expected invalid follow-up mode to fail")
+	}
+}
+
 func TestCommandLoopAbortCancelsAndClearsQueue(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)

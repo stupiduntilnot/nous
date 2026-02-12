@@ -57,6 +57,11 @@ func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
 		if _, ok := env.Payload["tools"].([]any); !ok {
 			t.Fatalf("command line %d (%s) requires payload.tools array", line, env.Type)
 		}
+	case CmdSetSteeringMode, CmdSetFollowUpMode:
+		mode, _ := env.Payload["mode"].(string)
+		if mode != "one-at-a-time" && mode != "all" {
+			t.Fatalf("command line %d (%s) requires payload.mode one-at-a-time|all", line, env.Type)
+		}
 	case CmdSwitchSession, CmdBranchSession:
 		if sid, _ := env.Payload["session_id"].(string); sid == "" {
 			t.Fatalf("command line %d (%s) requires payload.session_id", line, env.Type)
@@ -129,6 +134,10 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		case "prompt", "steer", "follow_up", "abort":
 			if runID, _ := resp.Payload["run_id"].(string); runID == "" {
 				t.Fatalf("response line %d accepted %s payload requires run_id", line, cmd)
+			}
+		case "set_steering_mode", "set_follow_up_mode":
+			if mode, _ := resp.Payload["mode"].(string); mode == "" {
+				t.Fatalf("response line %d accepted %s payload requires mode", line, cmd)
 			}
 		}
 	case "result":

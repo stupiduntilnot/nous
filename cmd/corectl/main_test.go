@@ -22,6 +22,8 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"branch", "sess-1"}, wantCmd: "branch_session"},
 		{args: []string{"set_active_tools"}, wantCmd: "set_active_tools"},
 		{args: []string{"set_active_tools", "a", "b"}, wantCmd: "set_active_tools"},
+		{args: []string{"set_steering_mode", "all"}, wantCmd: "set_steering_mode"},
+		{args: []string{"set_follow_up_mode", "one-at-a-time"}, wantCmd: "set_follow_up_mode"},
 		{args: []string{"ext", "hello"}, wantCmd: "extension_command"},
 		{args: []string{"ext", "hello", "{\"x\":1}"}, wantCmd: "extension_command"},
 		{args: []string{"prompt"}, wantErr: true},

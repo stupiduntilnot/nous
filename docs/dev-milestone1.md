@@ -33,6 +33,8 @@ Milestone 1 完成条件：
 - `follow_up`
 - `abort`
 - `set_active_tools`
+- `set_steering_mode`
+- `set_follow_up_mode`
 - `new_session`
 - `switch_session`
 - `branch_session`

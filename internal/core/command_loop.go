@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -17,10 +18,15 @@ type RunCoordinator interface {
 
 type TurnKind string
 
+type QueueMode string
+
 const (
 	TurnPrompt   TurnKind = "prompt"
 	TurnSteer    TurnKind = "steer"
 	TurnFollowUp TurnKind = "follow_up"
+
+	QueueModeOneAtATime QueueMode = "one-at-a-time"
+	QueueModeAll        QueueMode = "all"
 )
 
 type TurnResult struct {
@@ -47,14 +53,19 @@ type CommandLoop struct {
 	steers    []queuedTurn
 	followUps []queuedTurn
 
+	steeringMode QueueMode
+	followUpMode QueueMode
+
 	currentCancel context.CancelFunc
 	onTurnEnd     func(TurnResult)
 }
 
 func NewCommandLoop(executor TurnExecutor) *CommandLoop {
 	return &CommandLoop{
-		executor: executor,
-		state:    StateIdle,
+		executor:     executor,
+		state:        StateIdle,
+		steeringMode: QueueModeOneAtATime,
+		followUpMode: QueueModeOneAtATime,
 	}
 }
 
@@ -142,6 +153,44 @@ func (l *CommandLoop) Abort() error {
 	return nil
 }
 
+func (l *CommandLoop) SetSteeringMode(mode QueueMode) error {
+	if mode != QueueModeOneAtATime && mode != QueueModeAll {
+		return fmt.Errorf("invalid_mode")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steeringMode = mode
+	return nil
+}
+
+func (l *CommandLoop) SetFollowUpMode(mode QueueMode) error {
+	if mode != QueueModeOneAtATime && mode != QueueModeAll {
+		return fmt.Errorf("invalid_mode")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.followUpMode = mode
+	return nil
+}
+
+func (l *CommandLoop) SteeringMode() QueueMode {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.steeringMode
+}
+
+func (l *CommandLoop) FollowUpMode() QueueMode {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.followUpMode
+}
+
+func (l *CommandLoop) PendingCounts() (steers, followUps int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.steers), len(l.followUps)
+}
+
 func (l *CommandLoop) process(next queuedTurn) {
 	l.mu.Lock()
 	runID := l.runID
@@ -204,14 +253,12 @@ func (l *CommandLoop) process(next queuedTurn) {
 			return
 		}
 		if len(l.steers) > 0 {
-			next = l.steers[0]
-			l.steers = l.steers[1:]
+			next = l.dequeueSteerLocked()
 			l.mu.Unlock()
 			continue
 		}
 		if len(l.followUps) > 0 {
-			next = l.followUps[0]
-			l.followUps = l.followUps[1:]
+			next = l.dequeueFollowUpLocked()
 			l.mu.Unlock()
 			continue
 		}
@@ -227,4 +274,36 @@ func (l *CommandLoop) finishLocked() {
 	l.steers = nil
 	l.followUps = nil
 	l.currentCancel = nil
+}
+
+func (l *CommandLoop) dequeueSteerLocked() queuedTurn {
+	return dequeueQueueLocked(&l.steers, TurnSteer, l.steeringMode)
+}
+
+func (l *CommandLoop) dequeueFollowUpLocked() queuedTurn {
+	return dequeueQueueLocked(&l.followUps, TurnFollowUp, l.followUpMode)
+}
+
+func dequeueQueueLocked(queue *[]queuedTurn, kind TurnKind, mode QueueMode) queuedTurn {
+	items := *queue
+	if len(items) == 0 {
+		return queuedTurn{kind: kind}
+	}
+	if mode != QueueModeAll || len(items) == 1 {
+		next := items[0]
+		*queue = items[1:]
+		return next
+	}
+	texts := make([]string, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.text) == "" {
+			continue
+		}
+		texts = append(texts, item.text)
+	}
+	*queue = nil
+	return queuedTurn{
+		kind: kind,
+		text: strings.Join(texts, "\n"),
+	}
 }

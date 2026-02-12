@@ -6,8 +6,8 @@ import (
 
 	"nous/internal/core"
 	"nous/internal/extension"
-	"nous/internal/provider"
 	"nous/internal/protocol"
+	"nous/internal/provider"
 	"nous/internal/session"
 )
 
@@ -37,6 +37,8 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 		{ID: "c-follow", Type: string(protocol.CmdFollowUp), Payload: map[string]any{"text": "next"}},
 		{ID: "c-abort", Type: string(protocol.CmdAbort), Payload: map[string]any{}},
 		{ID: "c-tools", Type: string(protocol.CmdSetActiveTools), Payload: map[string]any{"tools": []any{}}},
+		{ID: "c-steer-mode", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "all"}},
+		{ID: "c-follow-mode", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": "all"}},
 		{ID: "c-new", Type: string(protocol.CmdNewSession), Payload: map[string]any{}},
 		{ID: "c-switch", Type: string(protocol.CmdSwitchSession), Payload: map[string]any{"session_id": parentID}},
 		{ID: "c-branch", Type: string(protocol.CmdBranchSession), Payload: map[string]any{"session_id": parentID}},
@@ -50,6 +52,39 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 		}
 		if resp.Error != nil && resp.Error.Code == "not_implemented" {
 			t.Fatalf("command unexpectedly not implemented: %s", tc.Type)
+		}
+	}
+}
+
+func TestDispatchSetQueueModesValidatesPayload(t *testing.T) {
+	base := testWorkDir(t)
+	srv := NewServer(filepath.Join(base, "core.sock"))
+	e := core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	e.SetExtensionManager(extension.NewManager())
+	loop := core.NewCommandLoop(e)
+	srv.SetEngine(e, loop)
+
+	okCases := []protocol.Envelope{
+		{ID: "m1", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "all"}},
+		{ID: "m2", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "one-at-a-time"}},
+		{ID: "m3", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": "all"}},
+		{ID: "m4", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": "one-at-a-time"}},
+	}
+	for _, tc := range okCases {
+		resp := srv.dispatch(tc)
+		if !resp.OK || resp.Type != "accepted" || resp.Error != nil {
+			t.Fatalf("expected accepted queue mode response for %s, got %+v", tc.Type, resp)
+		}
+	}
+
+	badCases := []protocol.Envelope{
+		{ID: "bad1", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "invalid"}},
+		{ID: "bad2", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": 123}},
+	}
+	for _, tc := range badCases {
+		resp := srv.dispatch(tc)
+		if resp.OK || resp.Error == nil || resp.Error.Code != "invalid_payload" {
+			t.Fatalf("expected invalid_payload for %s, got %+v", tc.Type, resp)
 		}
 	}
 }

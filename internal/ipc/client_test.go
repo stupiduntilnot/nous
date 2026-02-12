@@ -1200,6 +1200,78 @@ func TestAsyncPromptRunControlSteerPreemptsFollowUpOverIPC(t *testing.T) {
 	}
 }
 
+func TestAsyncPromptRunControlHonorsQueueModeAllOverIPC(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	exec := newOrderedExecutor()
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(exec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	setModeResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "mode-steer-all",
+		Type:    string(protocol.CmdSetSteeringMode),
+		Payload: map[string]any{"mode": "all"},
+	})
+	if err != nil || !setModeResp.OK {
+		t.Fatalf("set_steering_mode failed: resp=%+v err=%v", setModeResp, err)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "mode-all-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("prompt wait=false failed: resp=%+v err=%v", promptResp, err)
+	}
+
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("prompt turn did not start")
+	}
+
+	for _, steer := range []string{"s1", "s2"} {
+		resp, err := SendCommand(socket, protocol.Envelope{
+			ID:      "mode-all-" + steer,
+			Type:    string(protocol.CmdSteer),
+			Payload: map[string]any{"text": steer},
+		})
+		if err != nil || !resp.OK {
+			t.Fatalf("steer %s failed: resp=%+v err=%v", steer, resp, err)
+		}
+	}
+
+	exec.release <- struct{}{}
+	exec.release <- struct{}{}
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+
+	got := exec.Calls()
+	want := []string{"p0", "s1\ns2"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected queue-mode all call count: got=%d want=%d calls=%v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected queue-mode all call at %d: got=%q want=%q all=%v", i, got[i], want[i], got)
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestAsyncPromptPersistsToOriginalSessionWhenSwitchingMidRun(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")

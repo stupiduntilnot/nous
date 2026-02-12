@@ -12,16 +12,18 @@ type CommandType string
 type EventType string
 
 const (
-	CmdPing           CommandType = "ping"
-	CmdPrompt         CommandType = "prompt"
-	CmdSteer          CommandType = "steer"
-	CmdFollowUp       CommandType = "follow_up"
-	CmdAbort          CommandType = "abort"
-	CmdSetActiveTools CommandType = "set_active_tools"
-	CmdNewSession     CommandType = "new_session"
-	CmdSwitchSession  CommandType = "switch_session"
-	CmdBranchSession  CommandType = "branch_session"
-	CmdExtensionCmd   CommandType = "extension_command"
+	CmdPing            CommandType = "ping"
+	CmdPrompt          CommandType = "prompt"
+	CmdSteer           CommandType = "steer"
+	CmdFollowUp        CommandType = "follow_up"
+	CmdAbort           CommandType = "abort"
+	CmdSetActiveTools  CommandType = "set_active_tools"
+	CmdSetSteeringMode CommandType = "set_steering_mode"
+	CmdSetFollowUpMode CommandType = "set_follow_up_mode"
+	CmdNewSession      CommandType = "new_session"
+	CmdSwitchSession   CommandType = "switch_session"
+	CmdBranchSession   CommandType = "branch_session"
+	CmdExtensionCmd    CommandType = "extension_command"
 )
 
 const (
@@ -62,7 +64,18 @@ type ResponseEnvelope struct {
 }
 
 var validCommands = map[CommandType]struct{}{
-	CmdPing: {}, CmdPrompt: {}, CmdSteer: {}, CmdFollowUp: {}, CmdAbort: {}, CmdSetActiveTools: {}, CmdNewSession: {}, CmdSwitchSession: {}, CmdBranchSession: {}, CmdExtensionCmd: {},
+	CmdPing:            {},
+	CmdPrompt:          {},
+	CmdSteer:           {},
+	CmdFollowUp:        {},
+	CmdAbort:           {},
+	CmdSetActiveTools:  {},
+	CmdSetSteeringMode: {},
+	CmdSetFollowUpMode: {},
+	CmdNewSession:      {},
+	CmdSwitchSession:   {},
+	CmdBranchSession:   {},
+	CmdExtensionCmd:    {},
 }
 
 var validEvents = map[EventType]struct{}{
