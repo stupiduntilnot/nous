@@ -264,7 +264,7 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			wait = b
 		}
 		if !wait {
-			return responseErr(env.ID, "command_rejected", "wait_false_not_supported_use_prompt")
+			return s.promptAsync(env.ID, text)
 		}
 		return s.promptSync(env.ID, text)
 		case protocol.CmdSteer:
@@ -373,6 +373,26 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 			"output":     out,
 			"events":     events,
 			"session_id": sessionID,
+		},
+	})
+}
+
+func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
+	if _, err := s.ensureActiveSession(); err != nil {
+		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
+	}
+
+	runID, err := s.loop.Prompt(text)
+	if err != nil {
+		return responseErr(reqID, "command_rejected", err.Error())
+	}
+	return responseOK(protocol.Envelope{
+		V:    protocol.Version,
+		ID:   reqID,
+		Type: "accepted",
+		Payload: map[string]any{
+			"command": "prompt",
+			"run_id":  runID,
 		},
 	})
 }

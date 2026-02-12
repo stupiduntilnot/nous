@@ -618,7 +618,7 @@ func TestPromptSteerFollowUpAbortCommands(t *testing.T) {
 	}
 }
 
-func TestPromptCommandWithWaitFalseRejectedOverIPC(t *testing.T) {
+func TestPromptCommandWithWaitFalseAcceptedOverIPC(t *testing.T) {
 	socket := testSocketPath(t)
 	srv := NewServer(socket)
 	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
@@ -640,8 +640,14 @@ func TestPromptCommandWithWaitFalseRejectedOverIPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt command failed: %v", err)
 	}
-	if resp.OK || resp.Error == nil || resp.Error.Code != "command_rejected" {
+	if !resp.OK || resp.Type != "accepted" || resp.Error != nil {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if got, _ := resp.Payload["command"].(string); got != "prompt" {
+		t.Fatalf("unexpected accepted command payload: %+v", resp.Payload)
+	}
+	if runID, _ := resp.Payload["run_id"].(string); runID == "" {
+		t.Fatalf("expected run_id in accepted payload: %+v", resp.Payload)
 	}
 	cancel()
 	if err := <-errCh; err != nil {
@@ -931,7 +937,7 @@ func TestPromptPersistsSessionRecords(t *testing.T) {
 	t.Fatalf("session records not persisted in time")
 }
 
-func TestPromptWaitFalseIsRejected(t *testing.T) {
+func TestPromptWaitFalseIsAccepted(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")
 	srv := NewServer(socket)
@@ -952,11 +958,14 @@ func TestPromptWaitFalseIsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompt request failed: %v", err)
 	}
-	if resp.OK || resp.Type != "error" {
+	if !resp.OK || resp.Type != "accepted" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
-	if resp.Error == nil || resp.Error.Code != "command_rejected" {
-		t.Fatalf("unexpected error body: %+v", resp.Error)
+	if got, _ := resp.Payload["command"].(string); got != "prompt" {
+		t.Fatalf("unexpected accepted command payload: %+v", resp.Payload)
+	}
+	if runID, _ := resp.Payload["run_id"].(string); runID == "" {
+		t.Fatalf("expected run_id in accepted payload: %+v", resp.Payload)
 	}
 	cancel()
 	if err := <-errCh; err != nil {

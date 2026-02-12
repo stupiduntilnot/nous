@@ -54,7 +54,7 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 	}
 }
 
-func TestDispatchPromptWithWaitFalseIsRejected(t *testing.T) {
+func TestDispatchPromptWithWaitFalseIsAccepted(t *testing.T) {
 	base := testWorkDir(t)
 	srv := NewServer(filepath.Join(base, "core.sock"))
 
@@ -73,10 +73,13 @@ func TestDispatchPromptWithWaitFalseIsRejected(t *testing.T) {
 		Type:    string(protocol.CmdPrompt),
 		Payload: map[string]any{"text": "hello", "wait": false},
 	})
-	if resp.OK || resp.Type != "error" || resp.Error == nil {
+	if !resp.OK || resp.Type != "accepted" || resp.Error != nil {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
-	if resp.Error.Code != "command_rejected" {
-		t.Fatalf("unexpected error code: %+v", resp.Error)
+	if got, _ := resp.Payload["command"].(string); got != "prompt" {
+		t.Fatalf("unexpected accepted command payload: %+v", resp.Payload)
+	}
+	if runID, _ := resp.Payload["run_id"].(string); runID == "" {
+		t.Fatalf("missing run_id in accepted payload: %+v", resp.Payload)
 	}
 }

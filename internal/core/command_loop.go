@@ -65,25 +65,26 @@ func (l *CommandLoop) State() RunState {
 	return l.state
 }
 
-func (l *CommandLoop) Prompt(text string) error {
+func (l *CommandLoop) Prompt(text string) (string, error) {
 	if text == "" {
-		return fmt.Errorf("empty_prompt")
+		return "", fmt.Errorf("empty_prompt")
 	}
 
 	l.mu.Lock()
 	if l.state != StateIdle {
 		l.mu.Unlock()
-		return fmt.Errorf("run_in_progress")
+		return "", fmt.Errorf("run_in_progress")
 	}
 
 	l.runCounter++
 	l.runID = fmt.Sprintf("run-%d", l.runCounter)
+	runID := l.runID
 	l.state = StateRunning
 	initial := queuedTurn{kind: TurnPrompt, text: text}
 	l.mu.Unlock()
 
 	go l.process(initial)
-	return nil
+	return runID, nil
 }
 
 func (l *CommandLoop) Steer(text string) error {

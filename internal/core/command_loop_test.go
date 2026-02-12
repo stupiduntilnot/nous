@@ -60,7 +60,7 @@ func TestCommandLoopSteerPreemptsFollowUps(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)
 
-	if err := loop.Prompt("p0"); err != nil {
+	if _, err := loop.Prompt("p0"); err != nil {
 		t.Fatalf("prompt failed: %v", err)
 	}
 	select {
@@ -103,7 +103,7 @@ func TestCommandLoopAbortCancelsAndClearsQueue(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)
 
-	if err := loop.Prompt("p0"); err != nil {
+	if _, err := loop.Prompt("p0"); err != nil {
 		t.Fatalf("prompt failed: %v", err)
 	}
 	select {
@@ -133,7 +133,7 @@ func TestCommandLoopConcurrentCommandsNoPriorityDrift(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)
 
-	if err := loop.Prompt("p0"); err != nil {
+	if _, err := loop.Prompt("p0"); err != nil {
 		t.Fatalf("prompt failed: %v", err)
 	}
 	select {
@@ -206,7 +206,7 @@ func TestCommandLoopAbortPropagatesContextCancellation(t *testing.T) {
 		results <- r
 	})
 
-	if err := loop.Prompt("p0"); err != nil {
+	if _, err := loop.Prompt("p0"); err != nil {
 		t.Fatalf("prompt failed: %v", err)
 	}
 	select {
