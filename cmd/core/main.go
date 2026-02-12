@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +23,7 @@ func main() {
 	providerName := flag.String("provider", "mock", "provider: mock|openai|gemini")
 	model := flag.String("model", "", "provider model name")
 	apiBase := flag.String("api-base", "", "optional provider API base URL")
+	workdir := flag.String("workdir", "", "working directory for builtin tools (default: current directory)")
 	commandTimeout := flag.Duration("command-timeout", 30*time.Second, "ipc command timeout (e.g. 30s, 500ms)")
 	enableDemoExt := flag.Bool("enable-demo-extension", false, "register built-in demo extension command/tool")
 	extensionHookTimeout := flag.Duration("extension-hook-timeout", 0, "extension hook timeout (0 disables)")
@@ -35,9 +38,9 @@ func main() {
 		log.Fatalf("provider init failed: %v", err)
 	}
 	engine := core.NewEngine(core.NewRuntime(), p)
-	cwd, err := os.Getwd()
+	cwd, err := resolveWorkDir(*workdir)
 	if err != nil {
-		log.Fatalf("resolve cwd failed: %v", err)
+		log.Fatalf("resolve workdir failed: %v", err)
 	}
 	engine.SetTools(builtins.DefaultTools(cwd))
 	extMgr := extension.NewManager()
@@ -79,4 +82,23 @@ func configureExtensionTimeouts(m *extension.Manager, hookTimeout, toolTimeout t
 		return err
 	}
 	return nil
+}
+
+func resolveWorkDir(workdir string) (string, error) {
+	dir := strings.TrimSpace(workdir)
+	if dir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		dir = cwd
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not_directory: %s", dir)
+	}
+	return dir, nil
 }

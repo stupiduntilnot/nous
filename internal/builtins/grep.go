@@ -15,12 +15,7 @@ import (
 )
 
 func NewGrepTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 
 	return core.ToolFunc{
 		ToolName: "grep",
@@ -36,11 +31,7 @@ func NewGrepTool(cwd string) core.Tool {
 			if root == "" {
 				root = "."
 			}
-			absRoot := root
-			if !filepath.IsAbs(absRoot) {
-				absRoot = filepath.Join(base, absRoot)
-			}
-			absRoot = filepath.Clean(absRoot)
+			absRoot := resolveToolPath(base, root)
 
 			info, err := os.Stat(absRoot)
 			if err != nil {

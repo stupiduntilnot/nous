@@ -42,6 +42,23 @@ func TestReadToolResolvesRelativePath(t *testing.T) {
 	}
 }
 
+func TestReadToolExpandsEnvPath(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(p, []byte("env-path"), 0o644); err != nil {
+		t.Fatalf("write fixture failed: %v", err)
+	}
+	t.Setenv("NOUS_READ_TARGET", p)
+
+	got, err := NewReadTool(t.TempDir()).Execute(context.Background(), map[string]any{"path": "$NOUS_READ_TARGET"})
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if got != "env-path" {
+		t.Fatalf("unexpected read output: %q", got)
+	}
+}
+
 func TestReadToolOffsetLimit(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\nc\nd"), 0o644); err != nil {

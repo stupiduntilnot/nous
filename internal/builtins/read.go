@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -14,12 +13,7 @@ import (
 )
 
 func NewReadTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 
 	return core.ToolFunc{
 		ToolName: "read",
@@ -38,11 +32,7 @@ func NewReadTool(cwd string) core.Tool {
 				return "", fmt.Errorf("read_invalid_limit")
 			}
 
-			abs := rawPath
-			if !filepath.IsAbs(abs) {
-				abs = filepath.Join(base, rawPath)
-			}
-			abs = filepath.Clean(abs)
+			abs := resolveToolPath(base, rawPath)
 
 			info, err := os.Stat(abs)
 			if err != nil {

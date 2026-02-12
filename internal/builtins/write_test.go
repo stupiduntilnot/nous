@@ -46,6 +46,26 @@ func TestWriteToolErrors(t *testing.T) {
 	}
 }
 
+func TestWriteToolExpandsHomePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tool := NewWriteTool(t.TempDir())
+
+	if _, err := tool.Execute(context.Background(), map[string]any{
+		"path":    "~/expanded.txt",
+		"content": "home-write",
+	}); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, "expanded.txt"))
+	if err != nil {
+		t.Fatalf("read written file failed: %v", err)
+	}
+	if string(b) != "home-write" {
+		t.Fatalf("unexpected file content: %q", string(b))
+	}
+}
+
 type writeToolCallProvider struct {
 	calls int
 }

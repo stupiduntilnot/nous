@@ -40,7 +40,7 @@ make release-gate
 ### Run
 Start core:
 ```bash
-./bin/nous-core --socket /tmp/nous-core.sock --provider mock
+./bin/nous-core --socket /tmp/nous-core.sock --provider mock --workdir "$PWD"
 ```
 
 Ping with CLI:
@@ -56,7 +56,7 @@ Start TUI:
 Use OpenAI provider:
 ```bash
 source ~/.zshrc
-./bin/nous-core --socket /tmp/nous-core.sock --provider openai --model gpt-4o-mini
+./bin/nous-core --socket /tmp/nous-core.sock --provider openai --model gpt-4o-mini --workdir "$PWD"
 ```
 
 Quick start presets:
@@ -65,6 +65,16 @@ make start small
 make start medium
 make start large
 ```
+
+Run with explicit working directory for relative tool paths:
+```bash
+make start medium WORKDIR="$HOME/code/nous-tui"
+```
+
+Path handling in builtin file tools:
+1. Relative paths (for example `./docs/design.md`) resolve from core `--workdir`.
+2. `$VAR` and `${VAR}` environment expansion is supported.
+3. `~` expands to the user home directory.
 
 List available OpenAI model IDs from your account:
 ```bash

@@ -2,6 +2,7 @@
 
 SOCKET ?= /tmp/nous-core.sock
 API_BASE ?= https://api.openai.com/v1
+WORKDIR ?= $(CURDIR)
 OPENAI_MODEL_SMALL ?= gpt-4o-mini
 OPENAI_MODEL_MEDIUM ?= gpt-4o
 OPENAI_MODEL_LARGE ?= gpt-5.2-codex
@@ -23,8 +24,8 @@ build:
 
 start: build
 	@test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is required" >&2; exit 1)
-	@echo "starting nous-core (size=$(if $(START_SIZE),$(START_SIZE),medium) model=$(START_MODEL) socket=$(SOCKET))"
-	OPENAI_API_KEY="$$OPENAI_API_KEY" ./bin/nous-core --socket "$(SOCKET)" --provider openai --model "$(START_MODEL)" --api-base "$(API_BASE)"
+	@echo "starting nous-core (size=$(if $(START_SIZE),$(START_SIZE),medium) model=$(START_MODEL) socket=$(SOCKET) workdir=$(WORKDIR))"
+	OPENAI_API_KEY="$$OPENAI_API_KEY" ./bin/nous-core --socket "$(SOCKET)" --provider openai --model "$(START_MODEL)" --api-base "$(API_BASE)" --workdir "$(WORKDIR)"
 
 start-small:
 	$(MAKE) start small

@@ -5,18 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"nous/internal/core"
 )
 
 func NewWriteTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 
 	return core.ToolFunc{
 		ToolName: "write",
@@ -30,11 +24,7 @@ func NewWriteTool(cwd string) core.Tool {
 				return "", fmt.Errorf("write_invalid_content")
 			}
 
-			abs := path
-			if !filepath.IsAbs(abs) {
-				abs = filepath.Join(base, path)
-			}
-			abs = filepath.Clean(abs)
+			abs := resolveToolPath(base, path)
 			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 				return "", fmt.Errorf("write_failed: %w", err)
 			}

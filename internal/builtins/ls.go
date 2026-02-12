@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -19,12 +18,7 @@ type lsEntry struct {
 }
 
 func NewLSTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 	return core.ToolFunc{
 		ToolName: "ls",
 		Run: func(_ context.Context, args map[string]any) (string, error) {
@@ -34,11 +28,7 @@ func NewLSTool(cwd string) core.Tool {
 				rawPath = "."
 			}
 
-			abs := rawPath
-			if !filepath.IsAbs(abs) {
-				abs = filepath.Join(base, rawPath)
-			}
-			abs = filepath.Clean(abs)
+			abs := resolveToolPath(base, rawPath)
 
 			info, err := os.Stat(abs)
 			if err != nil {

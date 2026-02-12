@@ -72,6 +72,8 @@ Queue/runtime semantics:
 2. Do not assume sync `result.events` is present in stream-first operation.
 3. Correlate run-scoped UI state via `run_id`.
 4. Show error envelopes (`ok=false`) with `error.code`, `error.message`, optional `error.cause`.
+5. File-tool relative paths are resolved by core against its startup `--workdir`, not client process cwd.
+6. For cross-process consistency, TUI should send absolute paths or ensure core `--workdir` is explicitly configured.
 
 ## 7. Product-TUI Acceptance Checklist
 

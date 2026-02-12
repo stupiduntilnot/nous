@@ -4,19 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"nous/internal/core"
 )
 
 func NewEditTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 
 	return core.ToolFunc{
 		ToolName: "edit",
@@ -34,11 +28,7 @@ func NewEditTool(cwd string) core.Tool {
 				return "", fmt.Errorf("edit_invalid_new_text")
 			}
 
-			abs := path
-			if !filepath.IsAbs(abs) {
-				abs = filepath.Join(base, path)
-			}
-			abs = filepath.Clean(abs)
+			abs := resolveToolPath(base, path)
 
 			b, err := os.ReadFile(abs)
 			if err != nil {

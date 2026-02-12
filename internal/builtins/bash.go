@@ -22,12 +22,7 @@ const (
 )
 
 func NewBashTool(cwd string) core.Tool {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		}
-	}
+	base := resolveBaseDir(cwd)
 
 	return core.ToolFunc{
 		ToolName: "bash",
