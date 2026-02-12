@@ -16,7 +16,13 @@ type Engine struct {
 	tools    map[string]Tool
 	active   map[string]struct{}
 	ext      *extension.Manager
+
+	transformContext TransformContextFn
+	convertToLLM     ConvertToLLMFn
 }
+
+type TransformContextFn func(ctx context.Context, messages []Message) ([]Message, error)
+type ConvertToLLMFn func(messages []Message) ([]provider.Message, error)
 
 func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
 	return &Engine{
@@ -29,6 +35,14 @@ func NewEngine(runtime *Runtime, p provider.Adapter) *Engine {
 
 func (e *Engine) SetExtensionManager(m *extension.Manager) {
 	e.ext = m
+}
+
+func (e *Engine) SetTransformContext(fn TransformContextFn) {
+	e.transformContext = fn
+}
+
+func (e *Engine) SetConvertToLLM(fn ConvertToLLMFn) {
+	e.convertToLLM = fn
 }
 
 func (e *Engine) ExecuteExtensionCommand(name string, payload map[string]any) (map[string]any, error) {
@@ -165,8 +179,12 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 
 	var final string
 	messages := []Message{{Role: RoleUser, Text: prompt}}
+	llmMessages, err := e.buildProviderMessages(ctx, messages)
+	if err != nil {
+		return "", err
+	}
 	req := provider.Request{
-		Messages:    providerMessagesFromCore(messages),
+		Messages:    llmMessages,
 		ActiveTools: e.activeToolNames(),
 	}
 	for step := 0; step < 8; step++ {
@@ -231,7 +249,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 			for _, toolResult := range stepToolResults {
 				messages = appendMessage(messages, RoleToolResult, toolResult)
 			}
-			req.Messages = providerMessagesFromCore(messages)
+			next, err := e.buildProviderMessages(ctx, messages)
+			if err != nil {
+				return "", err
+			}
+			req.Messages = next
 			if awaitNext {
 				e.runtime.Status("await_next: continue_with_tool_results")
 			}
@@ -335,4 +357,19 @@ func (e *Engine) skipToolCall(call provider.ToolCall, reason string) (string, er
 		return "", err
 	}
 	return result, nil
+}
+
+func (e *Engine) buildProviderMessages(ctx context.Context, messages []Message) ([]provider.Message, error) {
+	current := cloneMessages(messages)
+	if e.transformContext != nil {
+		next, err := e.transformContext(ctx, cloneMessages(current))
+		if err != nil {
+			return nil, err
+		}
+		current = cloneMessages(next)
+	}
+	if e.convertToLLM != nil {
+		return e.convertToLLM(cloneMessages(current))
+	}
+	return defaultConvertToLLMMessages(current), nil
 }

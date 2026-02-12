@@ -12,6 +12,7 @@ const (
 	RoleUser       MessageRole = "user"
 	RoleAssistant  MessageRole = "assistant"
 	RoleToolResult MessageRole = "tool_result"
+	RoleCustom     MessageRole = "custom"
 )
 
 type Message struct {
@@ -35,5 +36,26 @@ func providerMessagesFromCore(messages []Message) []provider.Message {
 		}
 		out = append(out, provider.Message{Role: string(msg.Role), Content: strings.TrimSpace(msg.Text)})
 	}
+	return out
+}
+
+func defaultConvertToLLMMessages(messages []Message) []provider.Message {
+	out := make([]provider.Message, 0, len(messages))
+	for _, msg := range messages {
+		text := strings.TrimSpace(msg.Text)
+		if text == "" {
+			continue
+		}
+		switch msg.Role {
+		case RoleUser, RoleAssistant, RoleToolResult:
+			out = append(out, provider.Message{Role: string(msg.Role), Content: text})
+		}
+	}
+	return out
+}
+
+func cloneMessages(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	copy(out, messages)
 	return out
 }
