@@ -6,7 +6,7 @@ import (
 )
 
 type OpenAIAdapter struct {
-	impl *openAICompatAdapter
+	impl *openAIChatAdapter
 }
 
 func NewOpenAIAdapter(apiKey, model, baseURL string) (*OpenAIAdapter, error) {
@@ -19,7 +19,7 @@ func NewOpenAIAdapter(apiKey, model, baseURL string) (*OpenAIAdapter, error) {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	impl, err := newOpenAICompatAdapter(apiKey, model, baseURL)
+	impl, err := newOpenAIChatAdapter(apiKey, model, baseURL)
 	if err != nil {
 		return nil, err
 	}

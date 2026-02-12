@@ -1,24 +1,26 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
 
-type openAICompatAdapter struct {
+type openAIChatAdapter struct {
 	apiKey  string
 	model   string
 	baseURL string
 	client  *http.Client
 }
 
-func newOpenAICompatAdapter(apiKey, model, baseURL string) (*openAICompatAdapter, error) {
+func newOpenAIChatAdapter(apiKey, model, baseURL string) (*openAIChatAdapter, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("missing_api_key")
 	}
@@ -28,7 +30,7 @@ func newOpenAICompatAdapter(apiKey, model, baseURL string) (*openAICompatAdapter
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing_api_base")
 	}
-	return &openAICompatAdapter{
+	return &openAIChatAdapter{
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: normalizeAPIBase(baseURL),
@@ -44,8 +46,8 @@ func normalizeAPIBase(baseURL string) string {
 	return trimmed + "/v1"
 }
 
-func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Event {
-	out := make(chan Event, 4)
+func (a *openAIChatAdapter) Stream(ctx context.Context, req Request) <-chan Event {
+	out := make(chan Event, 8)
 	go func() {
 		defer close(out)
 		out <- Event{Type: EventStart}
@@ -54,6 +56,10 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		payload := map[string]any{
 			"model":    a.model,
 			"messages": messages,
+			"stream":   true,
+			"stream_options": map[string]any{
+				"include_usage": true,
+			},
 		}
 		if len(req.ActiveTools) > 0 {
 			payload["tools"] = buildOpenAITools(req.ActiveTools)
@@ -63,6 +69,7 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 			out <- Event{Type: EventError, Err: err}
 			return
 		}
+
 		policy := defaultRetryPolicy()
 		var lastErr error
 		for attempt := 1; attempt <= policy.maxAttempts; attempt++ {
@@ -73,6 +80,7 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 			}
 			httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
 			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("Accept", "text/event-stream")
 
 			resp, err := a.client.Do(httpReq)
 			if err != nil {
@@ -102,13 +110,13 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 				return
 			}
 
-			body, readErr := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if readErr != nil {
-				out <- Event{Type: EventError, Err: readErr}
-				return
-			}
 			if resp.StatusCode >= 400 {
+				body, readErr := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if readErr != nil {
+					out <- Event{Type: EventError, Err: readErr}
+					return
+				}
 				httpErr := fmt.Errorf("openai_http_%d: %s", resp.StatusCode, string(body))
 				lastErr = httpErr
 				if shouldRetryHTTPStatus(resp.StatusCode) && attempt < policy.maxAttempts {
@@ -132,74 +140,13 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 				return
 			}
 
-			var decoded struct {
-				Choices []struct {
-					FinishReason string `json:"finish_reason"`
-					Message      struct {
-						Content   string `json:"content"`
-						ToolCalls []struct {
-							ID       string `json:"id"`
-							Type     string `json:"type"`
-							Function struct {
-								Name      string `json:"name"`
-								Arguments string `json:"arguments"`
-							} `json:"function"`
-						} `json:"tool_calls"`
-					} `json:"message"`
-				} `json:"choices"`
-				Usage struct {
-					PromptTokens     int `json:"prompt_tokens"`
-					CompletionTokens int `json:"completion_tokens"`
-					TotalTokens      int `json:"total_tokens"`
-				} `json:"usage"`
-			}
-			if err := json.Unmarshal(body, &decoded); err != nil {
+			if err := a.handleSuccessResponse(ctx, resp, out); err != nil {
+				if ctx.Err() != nil {
+					out <- Event{Type: EventError, Err: NewAbortedError("request_aborted", ctx.Err())}
+					return
+				}
 				out <- Event{Type: EventError, Err: err}
 				return
-			}
-			if len(decoded.Choices) == 0 {
-				out <- Event{Type: EventError, Err: fmt.Errorf("openai_empty_choices")}
-				return
-			}
-			msg := decoded.Choices[0].Message
-			finishReason := decoded.Choices[0].FinishReason
-
-			for _, tc := range msg.ToolCalls {
-				args := map[string]any{}
-				if strings.TrimSpace(tc.Function.Arguments) != "" {
-					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-						out <- Event{Type: EventError, Err: fmt.Errorf("openai_bad_tool_args: %w", err)}
-						return
-					}
-				}
-				out <- Event{
-					Type: EventToolCall,
-					ToolCall: ToolCall{
-						ID:        tc.ID,
-						Name:      tc.Function.Name,
-						Arguments: args,
-					},
-				}
-			}
-
-			if msg.Content != "" {
-				out <- Event{Type: EventTextDelta, Delta: msg.Content}
-			}
-			if finishReason == "tool_calls" {
-				out <- Event{Type: EventAwaitNext}
-			}
-			var usage *Usage
-			if decoded.Usage.PromptTokens > 0 || decoded.Usage.CompletionTokens > 0 || decoded.Usage.TotalTokens > 0 {
-				usage = &Usage{
-					InputTokens:  decoded.Usage.PromptTokens,
-					OutputTokens: decoded.Usage.CompletionTokens,
-					TotalTokens:  decoded.Usage.TotalTokens,
-				}
-			}
-			out <- Event{
-				Type:       EventDone,
-				StopReason: mapOpenAIStopReason(finishReason),
-				Usage:      usage,
 			}
 			return
 		}
@@ -208,6 +155,261 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		}
 	}()
 	return out
+}
+
+func (a *openAIChatAdapter) handleSuccessResponse(ctx context.Context, resp *http.Response, out chan<- Event) error {
+	defer resp.Body.Close()
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if strings.HasPrefix(contentType, "text/event-stream") {
+		return emitOpenAIStreamEvents(ctx, resp.Body, out)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return emitOpenAIJSONEvents(body, out)
+}
+
+type openAIJSONResponse struct {
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func emitOpenAIJSONEvents(body []byte, out chan<- Event) error {
+	var decoded openAIJSONResponse
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return err
+	}
+	if len(decoded.Choices) == 0 {
+		return fmt.Errorf("openai_empty_choices")
+	}
+	msg := decoded.Choices[0].Message
+	finishReason := decoded.Choices[0].FinishReason
+
+	for _, tc := range msg.ToolCalls {
+		args := map[string]any{}
+		if strings.TrimSpace(tc.Function.Arguments) != "" {
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				return fmt.Errorf("openai_bad_tool_args: %w", err)
+			}
+		}
+		out <- Event{
+			Type: EventToolCall,
+			ToolCall: ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: args,
+			},
+		}
+	}
+
+	if msg.Content != "" {
+		out <- Event{Type: EventTextDelta, Delta: msg.Content}
+	}
+	if finishReason == "tool_calls" {
+		out <- Event{Type: EventAwaitNext}
+	}
+	var usage *Usage
+	if decoded.Usage.PromptTokens > 0 || decoded.Usage.CompletionTokens > 0 || decoded.Usage.TotalTokens > 0 {
+		usage = &Usage{
+			InputTokens:  decoded.Usage.PromptTokens,
+			OutputTokens: decoded.Usage.CompletionTokens,
+			TotalTokens:  decoded.Usage.TotalTokens,
+		}
+	}
+	out <- Event{
+		Type:       EventDone,
+		StopReason: mapOpenAIStopReason(finishReason),
+		Usage:      usage,
+	}
+	return nil
+}
+
+type openAIStreamChunk struct {
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Delta        struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+type partialToolCall struct {
+	id      string
+	name    string
+	argsRaw strings.Builder
+}
+
+var errOpenAIStreamDone = fmt.Errorf("openai_stream_done")
+
+func emitOpenAIStreamEvents(ctx context.Context, r io.Reader, out chan<- Event) error {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+
+	toolCalls := map[int]*partialToolCall{}
+	finishReason := ""
+	var usage *Usage
+	done := false
+	dataLines := make([]string, 0, 4)
+	nextToolIndex := 0
+
+	flush := func() error {
+		if len(dataLines) == 0 {
+			return nil
+		}
+		payload := strings.TrimSpace(strings.Join(dataLines, "\n"))
+		dataLines = dataLines[:0]
+		if payload == "" {
+			return nil
+		}
+		if payload == "[DONE]" {
+			done = true
+			return errOpenAIStreamDone
+		}
+		var chunk openAIStreamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			return fmt.Errorf("openai_bad_stream_chunk: %w", err)
+		}
+		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 || chunk.Usage.TotalTokens > 0 {
+			usage = &Usage{
+				InputTokens:  chunk.Usage.PromptTokens,
+				OutputTokens: chunk.Usage.CompletionTokens,
+				TotalTokens:  chunk.Usage.TotalTokens,
+			}
+		}
+		for _, choice := range chunk.Choices {
+			if strings.TrimSpace(choice.FinishReason) != "" {
+				finishReason = strings.TrimSpace(choice.FinishReason)
+			}
+			if strings.TrimSpace(choice.Delta.Content) != "" {
+				out <- Event{Type: EventTextDelta, Delta: choice.Delta.Content}
+			}
+			for _, tc := range choice.Delta.ToolCalls {
+				idx := tc.Index
+				if idx < 0 {
+					idx = nextToolIndex
+					nextToolIndex++
+				}
+				state, ok := toolCalls[idx]
+				if !ok {
+					state = &partialToolCall{}
+					toolCalls[idx] = state
+				}
+				if strings.TrimSpace(tc.ID) != "" {
+					state.id = strings.TrimSpace(tc.ID)
+				}
+				if strings.TrimSpace(tc.Function.Name) != "" {
+					state.name = strings.TrimSpace(tc.Function.Name)
+				}
+				if tc.Function.Arguments != "" {
+					state.argsRaw.WriteString(tc.Function.Arguments)
+				}
+			}
+		}
+		return nil
+	}
+
+	for scanner.Scan() {
+		if ctx.Err() != nil {
+			return NewAbortedError("request_aborted", ctx.Err())
+		}
+		line := scanner.Text()
+		if line == "" {
+			err := flush()
+			if err == errOpenAIStreamDone {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if !done {
+		if err := flush(); err == errOpenAIStreamDone {
+			done = true
+		} else if err != nil {
+			return err
+		}
+	}
+	if !done {
+		return fmt.Errorf("openai_stream_eof_before_done")
+	}
+
+	if len(toolCalls) > 0 {
+		indices := make([]int, 0, len(toolCalls))
+		for idx := range toolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		for _, idx := range indices {
+			state := toolCalls[idx]
+			args := map[string]any{}
+			if raw := strings.TrimSpace(state.argsRaw.String()); raw != "" {
+				if err := json.Unmarshal([]byte(raw), &args); err != nil {
+					return fmt.Errorf("openai_bad_tool_args: %w", err)
+				}
+			}
+			out <- Event{
+				Type: EventToolCall,
+				ToolCall: ToolCall{
+					ID:        state.id,
+					Name:      state.name,
+					Arguments: args,
+				},
+			}
+		}
+	}
+
+	if finishReason == "tool_calls" {
+		out <- Event{Type: EventAwaitNext}
+	}
+	out <- Event{
+		Type:       EventDone,
+		StopReason: mapOpenAIStopReason(finishReason),
+		Usage:      usage,
+	}
+	return nil
 }
 
 func mapOpenAIStopReason(reason string) StopReason {

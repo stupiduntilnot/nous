@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+func writeSSE(w http.ResponseWriter, chunks ...string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	if f, ok := w.(http.Flusher); ok {
+		for _, chunk := range chunks {
+			_, _ = io.WriteString(w, "data: "+chunk+"\n\n")
+			f.Flush()
+		}
+		return
+	}
+	for _, chunk := range chunks {
+		_, _ = io.WriteString(w, "data: "+chunk+"\n\n")
+	}
+}
+
 func collectEvents(ch <-chan Event) []Event {
 	out := make([]Event, 0, 4)
 	for ev := range ch {
@@ -19,6 +33,45 @@ func collectEvents(ch <-chan Event) []Event {
 }
 
 func TestOpenAIAdapterStream(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Fatalf("unexpected auth header: %q", got)
+		}
+		writeSSE(
+			w,
+			`{"choices":[{"delta":{"content":"hello "}}]}`,
+			`{"choices":[{"delta":{"content":"from openai"}}]}`,
+			`{"choices":[{"finish_reason":"stop","delta":{}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}`,
+			`[DONE]`,
+		)
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	if len(evs) < 4 {
+		t.Fatalf("unexpected event count: %d", len(evs))
+	}
+	if evs[1].Type != EventTextDelta || evs[1].Delta != "hello " {
+		t.Fatalf("unexpected first text event: %+v", evs[1])
+	}
+	if evs[2].Type != EventTextDelta || evs[2].Delta != "from openai" {
+		t.Fatalf("unexpected second text event: %+v", evs[2])
+	}
+	done := evs[len(evs)-1]
+	if done.Type != EventDone || done.StopReason != StopReasonStop {
+		t.Fatalf("expected done/stop event, got %+v", done)
+	}
+	if done.Usage == nil || done.Usage.InputTokens != 9 || done.Usage.OutputTokens != 4 || done.Usage.TotalTokens != 13 {
+		t.Fatalf("unexpected usage on done event: %+v", done.Usage)
+	}
+}
+
+func TestOpenAIAdapterStreamJSONFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Fatalf("unexpected auth header: %q", got)
@@ -42,6 +95,85 @@ func TestOpenAIAdapterStream(t *testing.T) {
 	}
 	if evs[1].Type != EventTextDelta || evs[1].Delta != "hello from openai" {
 		t.Fatalf("unexpected text event: %+v", evs[1])
+	}
+}
+
+func TestOpenAIAdapterStreamToolCallsFromSSE(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(
+			w,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"arguments":"go\"}"}}]},"finish_reason":"tool_calls"}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`,
+			`[DONE]`,
+		)
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	if len(evs) < 4 {
+		t.Fatalf("unexpected event count: %d", len(evs))
+	}
+	if evs[1].Type != EventToolCall {
+		t.Fatalf("expected tool call event, got %+v", evs[1])
+	}
+	if evs[1].ToolCall.Name != "lookup" {
+		t.Fatalf("unexpected tool call name: %+v", evs[1].ToolCall)
+	}
+	if got, _ := evs[1].ToolCall.Arguments["q"].(string); got != "go" {
+		t.Fatalf("unexpected tool call args: %+v", evs[1].ToolCall.Arguments)
+	}
+	if evs[2].Type != EventAwaitNext {
+		t.Fatalf("expected await-next event, got %+v", evs[2])
+	}
+	done := evs[len(evs)-1]
+	if done.Type != EventDone || done.StopReason != StopReasonToolUse {
+		t.Fatalf("expected done tool_use event, got %+v", done)
+	}
+}
+
+func TestOpenAIAdapterStreamMalformedChunkReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(w, `{"choices":[`, `[DONE]`)
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	last := evs[len(evs)-1]
+	if last.Type != EventError {
+		t.Fatalf("expected final error event, got %+v", last)
+	}
+	if last.Err == nil || !strings.Contains(last.Err.Error(), "openai_bad_stream_chunk") {
+		t.Fatalf("expected malformed stream chunk error, got %+v", last.Err)
+	}
+}
+
+func TestOpenAIAdapterStreamEOFBeforeDoneReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	last := evs[len(evs)-1]
+	if last.Type != EventError {
+		t.Fatalf("expected final error event, got %+v", last)
+	}
+	if last.Err == nil || !strings.Contains(last.Err.Error(), "openai_stream_eof_before_done") {
+		t.Fatalf("expected stream eof error, got %+v", last.Err)
 	}
 }
 
