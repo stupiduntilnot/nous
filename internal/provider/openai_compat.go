@@ -248,6 +248,23 @@ func buildOpenAITools(names []string) []map[string]any {
 				"required":             []string{"pattern"},
 				"additionalProperties": true,
 			}
+		case "write":
+			description = "Write text content into a file path."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Path to the file to write (relative or absolute).",
+					},
+					"content": map[string]any{
+						"type":        "string",
+						"description": "Text content to write.",
+					},
+				},
+				"required":             []string{"path", "content"},
+				"additionalProperties": true,
+			}
 		}
 		tools = append(tools, map[string]any{
 			"type": "function",

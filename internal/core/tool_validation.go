@@ -16,6 +16,8 @@ func normalizeToolArguments(toolName string, args map[string]any) (map[string]an
 		return normalizeFindArgs(args)
 	case "grep":
 		return normalizeGrepArgs(args)
+	case "write":
+		return normalizeWriteArgs(args)
 	default:
 		return args, nil
 	}
@@ -113,6 +115,37 @@ func normalizeGrepArgs(args map[string]any) (map[string]any, error) {
 		out["ignore_case"] = b
 	}
 	return out, nil
+}
+
+func normalizeWriteArgs(args map[string]any) (map[string]any, error) {
+	path := resolveStringArg(args,
+		"path", "file_path", "filePath", "filepath", "file", "target_path", "targetPath")
+	if path == "" {
+		return nil, fmt.Errorf("validation_failed: write.path is required")
+	}
+	content, ok := resolveRequiredStringField(args, "content", "text", "body")
+	if !ok {
+		return nil, fmt.Errorf("validation_failed: write.content is required")
+	}
+	return map[string]any{
+		"path":    path,
+		"content": content,
+	}, nil
+}
+
+func resolveRequiredStringField(args map[string]any, keys ...string) (string, bool) {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			return "", false
+		}
+		return s, true
+	}
+	return "", false
 }
 
 func resolveStringArg(args map[string]any, keys ...string) string {

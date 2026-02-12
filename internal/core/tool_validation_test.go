@@ -75,3 +75,38 @@ func TestNormalizeGrepArgsRequiresPattern(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestNormalizeWriteArgsAcceptsAliases(t *testing.T) {
+	got, err := normalizeToolArguments("write", map[string]any{
+		"filePath": "a.txt",
+		"text":     "hello",
+	})
+	if err != nil {
+		t.Fatalf("normalize write args failed: %v", err)
+	}
+	if p, _ := got["path"].(string); p != "a.txt" {
+		t.Fatalf("unexpected path: %#v", got["path"])
+	}
+	if c, _ := got["content"].(string); c != "hello" {
+		t.Fatalf("unexpected content: %#v", got["content"])
+	}
+}
+
+func TestNormalizeWriteArgsRequiresPathAndContent(t *testing.T) {
+	if _, err := normalizeToolArguments("write", map[string]any{"content": "x"}); err == nil || err.Error() != "validation_failed: write.path is required" {
+		t.Fatalf("unexpected error for missing path: %v", err)
+	}
+	if _, err := normalizeToolArguments("write", map[string]any{"path": "a.txt"}); err == nil || err.Error() != "validation_failed: write.content is required" {
+		t.Fatalf("unexpected error for missing content: %v", err)
+	}
+}
+
+func TestNormalizeWriteArgsAllowsEmptyContent(t *testing.T) {
+	got, err := normalizeToolArguments("write", map[string]any{"path": "a.txt", "content": ""})
+	if err != nil {
+		t.Fatalf("normalize write with empty content failed: %v", err)
+	}
+	if c, _ := got["content"].(string); c != "" {
+		t.Fatalf("expected empty content, got: %#v", got["content"])
+	}
+}
