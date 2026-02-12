@@ -1,9 +1,26 @@
 package extension
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
+
+var ErrTimeout = errors.New("extension_timeout")
+
+type TimeoutError struct {
+	Operation string
+	Timeout   time.Duration
+}
+
+func (e TimeoutError) Error() string {
+	return fmt.Sprintf("extension_timeout: %s exceeded %s", e.Operation, e.Timeout)
+}
+
+func (e TimeoutError) Is(target error) bool {
+	return target == ErrTimeout
+}
 
 type ToolHandler func(args map[string]any) (string, error)
 type CommandHandler func(payload map[string]any) (map[string]any, error)
@@ -106,6 +123,9 @@ type Manager struct {
 	turnStartHooks           []TurnStartHook
 	sessionBeforeSwitchHooks []SessionBeforeSwitchHook
 	sessionBeforeForkHooks   []SessionBeforeForkHook
+
+	hookTimeout time.Duration
+	toolTimeout time.Duration
 }
 
 func NewManager() *Manager {
@@ -125,6 +145,38 @@ func (m *Manager) RegisterTool(name string, handler ToolHandler) error {
 	return nil
 }
 
+func (m *Manager) SetHookTimeout(timeout time.Duration) error {
+	if timeout < 0 {
+		return fmt.Errorf("invalid_hook_timeout")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hookTimeout = timeout
+	return nil
+}
+
+func (m *Manager) HookTimeout() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.hookTimeout
+}
+
+func (m *Manager) SetToolTimeout(timeout time.Duration) error {
+	if timeout < 0 {
+		return fmt.Errorf("invalid_tool_timeout")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.toolTimeout = timeout
+	return nil
+}
+
+func (m *Manager) ToolTimeout() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.toolTimeout
+}
+
 func (m *Manager) RegisterCommand(name string, handler CommandHandler) error {
 	if name == "" || handler == nil {
 		return fmt.Errorf("invalid_command_registration")
@@ -138,11 +190,14 @@ func (m *Manager) RegisterCommand(name string, handler CommandHandler) error {
 func (m *Manager) ExecuteTool(name string, args map[string]any) (result string, handled bool, err error) {
 	m.mu.RLock()
 	h, ok := m.tools[name]
+	timeout := m.toolTimeout
 	m.mu.RUnlock()
 	if !ok {
 		return "", false, nil
 	}
-	out, err := h(args)
+	out, err := runWithTimeoutValue(timeout, "tool:"+name, func() (string, error) {
+		return h(args)
+	})
 	if err != nil {
 		return "", true, err
 	}
@@ -229,11 +284,14 @@ func (m *Manager) RegisterSessionBeforeForkHook(h SessionBeforeForkHook) {
 func (m *Manager) RunInputHooks(text string) (InputHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]InputHook(nil), m.inputHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	out := InputHookOutput{Text: text}
 	for _, h := range hooks {
-		next, err := h(InputHookInput{Text: out.Text})
+		next, err := runWithTimeoutValue(timeout, "input_hook", func() (InputHookOutput, error) {
+			return h(InputHookInput{Text: out.Text})
+		})
 		if err != nil {
 			return InputHookOutput{}, err
 		}
@@ -251,10 +309,13 @@ func (m *Manager) RunInputHooks(text string) (InputHookOutput, error) {
 func (m *Manager) RunToolCallHooks(toolName string, args map[string]any) (ToolCallHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]ToolCallHook(nil), m.toolCallHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		out, err := h(ToolCallHookInput{ToolName: toolName, Args: args})
+		out, err := runWithTimeoutValue(timeout, "tool_call_hook:"+toolName, func() (ToolCallHookOutput, error) {
+			return h(ToolCallHookInput{ToolName: toolName, Args: args})
+		})
 		if err != nil {
 			return ToolCallHookOutput{}, err
 		}
@@ -271,11 +332,14 @@ func (m *Manager) RunToolCallHooks(toolName string, args map[string]any) (ToolCa
 func (m *Manager) RunToolResultHooks(toolName, result string) (ToolResultHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]ToolResultHook(nil), m.toolResultHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	out := ToolResultHookOutput{Result: result}
 	for _, h := range hooks {
-		next, err := h(ToolResultHookInput{ToolName: toolName, Result: out.Result})
+		next, err := runWithTimeoutValue(timeout, "tool_result_hook:"+toolName, func() (ToolResultHookOutput, error) {
+			return h(ToolResultHookInput{ToolName: toolName, Result: out.Result})
+		})
 		if err != nil {
 			return ToolResultHookOutput{}, err
 		}
@@ -289,10 +353,13 @@ func (m *Manager) RunToolResultHooks(toolName, result string) (ToolResultHookOut
 func (m *Manager) RunTurnEndHooks(runID string, turn int) error {
 	m.mu.RLock()
 	hooks := append([]TurnEndHook(nil), m.turnEndHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		if err := h(TurnEndHookInput{RunID: runID, Turn: turn}); err != nil {
+		if err := runWithTimeoutErr(timeout, "turn_end_hook", func() error {
+			return h(TurnEndHookInput{RunID: runID, Turn: turn})
+		}); err != nil {
 			return err
 		}
 	}
@@ -302,10 +369,13 @@ func (m *Manager) RunTurnEndHooks(runID string, turn int) error {
 func (m *Manager) RunRunStartHooks(runID string) error {
 	m.mu.RLock()
 	hooks := append([]RunStartHook(nil), m.runStartHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		if err := h(RunStartHookInput{RunID: runID}); err != nil {
+		if err := runWithTimeoutErr(timeout, "run_start_hook", func() error {
+			return h(RunStartHookInput{RunID: runID})
+		}); err != nil {
 			return err
 		}
 	}
@@ -315,10 +385,13 @@ func (m *Manager) RunRunStartHooks(runID string) error {
 func (m *Manager) RunBeforeAgentStartHooks(runID string) error {
 	m.mu.RLock()
 	hooks := append([]BeforeAgentStartHook(nil), m.beforeAgentStartHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		if err := h(BeforeAgentStartHookInput{RunID: runID}); err != nil {
+		if err := runWithTimeoutErr(timeout, "before_agent_start_hook", func() error {
+			return h(BeforeAgentStartHookInput{RunID: runID})
+		}); err != nil {
 			return err
 		}
 	}
@@ -328,10 +401,13 @@ func (m *Manager) RunBeforeAgentStartHooks(runID string) error {
 func (m *Manager) RunRunEndHooks(runID string, turn int) error {
 	m.mu.RLock()
 	hooks := append([]RunEndHook(nil), m.runEndHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		if err := h(RunEndHookInput{RunID: runID, Turn: turn}); err != nil {
+		if err := runWithTimeoutErr(timeout, "run_end_hook", func() error {
+			return h(RunEndHookInput{RunID: runID, Turn: turn})
+		}); err != nil {
 			return err
 		}
 	}
@@ -341,10 +417,13 @@ func (m *Manager) RunRunEndHooks(runID string, turn int) error {
 func (m *Manager) RunTurnStartHooks(runID string, turn int) error {
 	m.mu.RLock()
 	hooks := append([]TurnStartHook(nil), m.turnStartHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		if err := h(TurnStartHookInput{RunID: runID, Turn: turn}); err != nil {
+		if err := runWithTimeoutErr(timeout, "turn_start_hook", func() error {
+			return h(TurnStartHookInput{RunID: runID, Turn: turn})
+		}); err != nil {
 			return err
 		}
 	}
@@ -354,13 +433,16 @@ func (m *Manager) RunTurnStartHooks(runID string, turn int) error {
 func (m *Manager) RunSessionBeforeSwitchHooks(currentSessionID, targetSessionID, reason string) (SessionBeforeSwitchHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]SessionBeforeSwitchHook(nil), m.sessionBeforeSwitchHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		out, err := h(SessionBeforeSwitchHookInput{
-			CurrentSessionID: currentSessionID,
-			TargetSessionID:  targetSessionID,
-			Reason:           reason,
+		out, err := runWithTimeoutValue(timeout, "session_before_switch_hook", func() (SessionBeforeSwitchHookOutput, error) {
+			return h(SessionBeforeSwitchHookInput{
+				CurrentSessionID: currentSessionID,
+				TargetSessionID:  targetSessionID,
+				Reason:           reason,
+			})
 		})
 		if err != nil {
 			return SessionBeforeSwitchHookOutput{}, err
@@ -378,11 +460,14 @@ func (m *Manager) RunSessionBeforeSwitchHooks(currentSessionID, targetSessionID,
 func (m *Manager) RunSessionBeforeForkHooks(parentSessionID string) (SessionBeforeForkHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]SessionBeforeForkHook(nil), m.sessionBeforeForkHooks...)
+	timeout := m.hookTimeout
 	m.mu.RUnlock()
 
 	for _, h := range hooks {
-		out, err := h(SessionBeforeForkHookInput{
-			ParentSessionID: parentSessionID,
+		out, err := runWithTimeoutValue(timeout, "session_before_fork_hook", func() (SessionBeforeForkHookOutput, error) {
+			return h(SessionBeforeForkHookInput{
+				ParentSessionID: parentSessionID,
+			})
 		})
 		if err != nil {
 			return SessionBeforeForkHookOutput{}, err
@@ -395,4 +480,42 @@ func (m *Manager) RunSessionBeforeForkHooks(parentSessionID string) (SessionBefo
 		}
 	}
 	return SessionBeforeForkHookOutput{}, nil
+}
+
+func runWithTimeoutErr(timeout time.Duration, operation string, fn func() error) error {
+	if timeout <= 0 {
+		return fn()
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- fn()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return TimeoutError{Operation: operation, Timeout: timeout}
+	}
+}
+
+func runWithTimeoutValue[T any](timeout time.Duration, operation string, fn func() (T, error)) (T, error) {
+	if timeout <= 0 {
+		return fn()
+	}
+	type valueResult struct {
+		val T
+		err error
+	}
+	done := make(chan valueResult, 1)
+	go func() {
+		v, err := fn()
+		done <- valueResult{val: v, err: err}
+	}()
+	select {
+	case out := <-done:
+		return out.val, out.err
+	case <-time.After(timeout):
+		var zero T
+		return zero, TimeoutError{Operation: operation, Timeout: timeout}
+	}
 }

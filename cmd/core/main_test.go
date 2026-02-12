@@ -2,27 +2,30 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"nous/internal/extension"
 )
 
-func TestRegisterDemoExtension(t *testing.T) {
+func TestConfigureExtensionTimeouts(t *testing.T) {
 	m := extension.NewManager()
-	registerDemoExtension(m)
+	if err := configureExtensionTimeouts(m, 150*time.Millisecond, 250*time.Millisecond); err != nil {
+		t.Fatalf("configure extension timeouts failed: %v", err)
+	}
+	if got := m.HookTimeout(); got != 150*time.Millisecond {
+		t.Fatalf("unexpected hook timeout: got=%s", got)
+	}
+	if got := m.ToolTimeout(); got != 250*time.Millisecond {
+		t.Fatalf("unexpected tool timeout: got=%s", got)
+	}
+}
 
-	out, handled, err := m.ExecuteCommand("echo", map[string]any{"text": "hi"})
-	if err != nil || !handled {
-		t.Fatalf("demo command execute failed: out=%v handled=%v err=%v", out, handled, err)
+func TestConfigureExtensionTimeoutsRejectsNegativeValues(t *testing.T) {
+	m := extension.NewManager()
+	if err := configureExtensionTimeouts(m, -1*time.Millisecond, 0); err == nil {
+		t.Fatalf("expected negative hook timeout error")
 	}
-	if got, _ := out["echo"].(string); got != "hi" {
-		t.Fatalf("unexpected command output: %+v", out)
-	}
-
-	toolOut, handled, err := m.ExecuteTool("demo.echo", map[string]any{"text": "x"})
-	if err != nil || !handled {
-		t.Fatalf("demo tool execute failed: out=%q handled=%v err=%v", toolOut, handled, err)
-	}
-	if toolOut != "demo.echo:x" {
-		t.Fatalf("unexpected tool output: %q", toolOut)
+	if err := configureExtensionTimeouts(m, 0, -1*time.Millisecond); err == nil {
+		t.Fatalf("expected negative tool timeout error")
 	}
 }

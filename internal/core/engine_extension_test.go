@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"nous/internal/extension"
 	"nous/internal/provider"
@@ -261,5 +262,92 @@ func TestEngineExecutesExtensionCommand(t *testing.T) {
 	}
 	if got, _ := out["msg"].(string); got != "hi agent" {
 		t.Fatalf("unexpected extension command output: %v", out)
+	}
+}
+
+func TestEngineIsolatesInputHookTimeoutAsWarning(t *testing.T) {
+	r := NewRuntime()
+	p := &capturePromptProvider{}
+	e := NewEngine(r, p)
+
+	m := extension.NewManager()
+	if err := m.SetHookTimeout(10 * time.Millisecond); err != nil {
+		t.Fatalf("set hook timeout failed: %v", err)
+	}
+	m.RegisterInputHook(func(in extension.InputHookInput) (extension.InputHookOutput, error) {
+		time.Sleep(40 * time.Millisecond)
+		return extension.InputHookOutput{Text: strings.ToUpper(in.Text)}, nil
+	})
+	e.SetExtensionManager(m)
+
+	events := make([]Event, 0, 8)
+	unsub := e.Subscribe(func(ev Event) {
+		events = append(events, ev)
+	})
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-ext-timeout-input", "hello"); err != nil {
+		t.Fatalf("prompt should not fail on input hook timeout: %v", err)
+	}
+	if len(p.last.Messages) != 1 || p.last.Messages[0].Content != "hello" {
+		t.Fatalf("expected original prompt on timeout fallback: %+v", p.last.Messages)
+	}
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventWarning && ev.Code == "extension_timeout" && strings.Contains(ev.Message, "input_hook") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected extension_timeout warning for input hook timeout")
+	}
+}
+
+func TestEngineIsolatesExtensionToolTimeoutAsToolError(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, scriptedProvider{})
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "first-ok", nil
+		}},
+	})
+
+	m := extension.NewManager()
+	if err := m.SetToolTimeout(10 * time.Millisecond); err != nil {
+		t.Fatalf("set tool timeout failed: %v", err)
+	}
+	if err := m.RegisterTool("second", func(map[string]any) (string, error) {
+		time.Sleep(40 * time.Millisecond)
+		return "slow-result", nil
+	}); err != nil {
+		t.Fatalf("register extension tool failed: %v", err)
+	}
+	e.SetExtensionManager(m)
+
+	events := make([]Event, 0, 16)
+	unsub := e.Subscribe(func(ev Event) {
+		events = append(events, ev)
+	})
+	defer unsub()
+
+	out, err := e.Prompt(context.Background(), "run-ext-timeout-tool", "go")
+	if err != nil {
+		t.Fatalf("prompt should not fail on extension tool timeout: %v", err)
+	}
+	if !strings.Contains(out, "first-ok") || !strings.Contains(out, "tool_error: extension_timeout") {
+		t.Fatalf("unexpected output for extension tool timeout: %q", out)
+	}
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventWarning && ev.Code == "extension_timeout" && strings.Contains(ev.Message, "extension_tool(second)") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected extension_timeout warning for extension tool timeout")
 	}
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -131,11 +132,16 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	if e.ext != nil {
 		out, err := e.ext.RunInputHooks(prompt)
 		if err != nil {
-			return "", err
-		}
-		prompt = out.Text
-		if out.Handled {
-			return prompt, nil
+			if errors.Is(err, extension.ErrTimeout) {
+				e.runtime.Warning("extension_timeout", fmt.Sprintf("input_hook: %v", err))
+			} else {
+				return "", err
+			}
+		} else {
+			prompt = out.Text
+			if out.Handled {
+				return prompt, nil
+			}
 		}
 	}
 
@@ -310,8 +316,12 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	if e.ext != nil {
 		hookOut, err := e.ext.RunToolCallHooks(call.Name, call.Arguments)
 		if err != nil {
-			e.runtime.Error("extension_error", "tool_call hook failed", err)
-			return "", err
+			if errors.Is(err, extension.ErrTimeout) {
+				e.runtime.Warning("extension_timeout", fmt.Sprintf("tool_call_hook(%s): %v", call.Name, err))
+			} else {
+				e.runtime.Error("extension_error", "tool_call hook failed", err)
+				return "", err
+			}
 		}
 		if hookOut.Blocked {
 			err := fmt.Errorf("tool_blocked: %s", hookOut.Reason)
@@ -324,6 +334,10 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 		if e.ext != nil {
 			extResult, handled, err := e.ext.ExecuteTool(call.Name, call.Arguments)
 			if err != nil {
+				if errors.Is(err, extension.ErrTimeout) {
+					e.runtime.Warning("extension_timeout", fmt.Sprintf("extension_tool(%s): %v", call.Name, err))
+					return fmt.Sprintf("tool_error: %v", err), nil
+				}
 				e.runtime.Error("extension_error", "extension tool execution failed", err)
 				return "", err
 			}
@@ -332,10 +346,15 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 				if e.ext != nil {
 					mutated, err := e.ext.RunToolResultHooks(call.Name, result)
 					if err != nil {
-						e.runtime.Error("extension_error", "tool_result hook failed", err)
-						return "", err
+						if errors.Is(err, extension.ErrTimeout) {
+							e.runtime.Warning("extension_timeout", fmt.Sprintf("tool_result_hook(%s): %v", call.Name, err))
+						} else {
+							e.runtime.Error("extension_error", "tool_result hook failed", err)
+							return "", err
+						}
+					} else {
+						result = mutated.Result
 					}
-					result = mutated.Result
 				}
 				if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
 					return "", err
@@ -360,10 +379,15 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 	if e.ext != nil {
 		mutated, err := e.ext.RunToolResultHooks(call.Name, result)
 		if err != nil {
-			e.runtime.Error("extension_error", "tool_result hook failed", err)
-			return "", err
+			if errors.Is(err, extension.ErrTimeout) {
+				e.runtime.Warning("extension_timeout", fmt.Sprintf("tool_result_hook(%s): %v", call.Name, err))
+			} else {
+				e.runtime.Error("extension_error", "tool_result hook failed", err)
+				return "", err
+			}
+		} else {
+			result = mutated.Result
 		}
-		result = mutated.Result
 	}
 	if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
 		return "", err

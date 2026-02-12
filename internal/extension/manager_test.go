@@ -1,8 +1,10 @@
 package extension
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInputHooksTransformAndHandled(t *testing.T) {
@@ -229,5 +231,48 @@ func TestExecuteRegisteredToolAndCommand(t *testing.T) {
 	_, handled, err = m.ExecuteCommand("missing", map[string]any{})
 	if err != nil || handled {
 		t.Fatalf("missing command should not be handled: handled=%v err=%v", handled, err)
+	}
+}
+
+func TestHookTimeoutReturnsExtensionTimeoutError(t *testing.T) {
+	m := NewManager()
+	if err := m.SetHookTimeout(10 * time.Millisecond); err != nil {
+		t.Fatalf("set hook timeout failed: %v", err)
+	}
+	m.RegisterInputHook(func(InputHookInput) (InputHookOutput, error) {
+		time.Sleep(40 * time.Millisecond)
+		return InputHookOutput{Text: "slow"}, nil
+	})
+
+	_, err := m.RunInputHooks("hello")
+	if err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got: %v", err)
+	}
+}
+
+func TestToolTimeoutReturnsHandledTimeoutError(t *testing.T) {
+	m := NewManager()
+	if err := m.SetToolTimeout(10 * time.Millisecond); err != nil {
+		t.Fatalf("set tool timeout failed: %v", err)
+	}
+	if err := m.RegisterTool("slow", func(map[string]any) (string, error) {
+		time.Sleep(40 * time.Millisecond)
+		return "done", nil
+	}); err != nil {
+		t.Fatalf("register tool failed: %v", err)
+	}
+
+	_, handled, err := m.ExecuteTool("slow", map[string]any{})
+	if !handled {
+		t.Fatalf("expected tool timeout to be handled")
+	}
+	if err == nil {
+		t.Fatalf("expected tool timeout error")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got: %v", err)
 	}
 }

@@ -23,6 +23,8 @@ func main() {
 	apiBase := flag.String("api-base", "", "optional provider API base URL")
 	commandTimeout := flag.Duration("command-timeout", 3*time.Second, "ipc command timeout (e.g. 3s, 500ms)")
 	enableDemoExt := flag.Bool("enable-demo-extension", false, "register built-in demo extension command/tool")
+	extensionHookTimeout := flag.Duration("extension-hook-timeout", 0, "extension hook timeout (0 disables)")
+	extensionToolTimeout := flag.Duration("extension-tool-timeout", 0, "extension tool timeout (0 disables)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -39,6 +41,9 @@ func main() {
 	}
 	engine.SetTools(builtins.DefaultTools(cwd))
 	extMgr := extension.NewManager()
+	if err := configureExtensionTimeouts(extMgr, *extensionHookTimeout, *extensionToolTimeout); err != nil {
+		log.Fatalf("invalid extension timeout config: %v", err)
+	}
 	if *enableDemoExt {
 		registerDemoExtension(extMgr)
 	}
@@ -64,4 +69,14 @@ func registerDemoExtension(m *extension.Manager) {
 		text, _ := args["text"].(string)
 		return "demo.echo:" + text, nil
 	})
+}
+
+func configureExtensionTimeouts(m *extension.Manager, hookTimeout, toolTimeout time.Duration) error {
+	if err := m.SetHookTimeout(hookTimeout); err != nil {
+		return err
+	}
+	if err := m.SetToolTimeout(toolTimeout); err != nil {
+		return err
+	}
+	return nil
 }
