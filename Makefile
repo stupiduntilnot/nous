@@ -3,7 +3,7 @@
 build:
 	mkdir -p bin
 	go build -o bin/nous-core ./cmd/core
-	go build -o bin/nousctl ./cmd/corectl
+	go build -o bin/nous-ctl ./cmd/corectl
 	go build -o bin/nous-tui ./cmd/tui
 
 test:

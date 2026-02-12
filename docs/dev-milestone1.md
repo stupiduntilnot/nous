@@ -253,7 +253,7 @@ Milestone 1 完成条件：
 
 ## 4. 交付清单（Milestone 1）
 
-1. 可运行二进制：`bin/nous-core`、`bin/nousctl`、`bin/nous-tui`。
+1. 可运行二进制：`bin/nous-core`、`bin/nous-ctl`、`bin/nous-tui`。
 2. 协议规范文件与 NDJSON 样例。
 3. 全量单测 + 关键集成脚本。
 4. 门禁命令：`make release-gate`。

@@ -15,7 +15,7 @@ import (
 
 func main() {
 	socket := flag.String("socket", "/tmp/nous-core.sock", "uds socket path")
-	requestTimeout := flag.Duration("request-timeout", 5*time.Second, "request timeout (e.g. 5s, 500ms)")
+	requestTimeout := flag.Duration("request-timeout", 30*time.Second, "request timeout (e.g. 30s, 500ms)")
 	flag.Parse()
 
 	args := flag.Args()
