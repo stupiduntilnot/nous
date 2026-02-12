@@ -1,4 +1,4 @@
-.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
+.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate milestone4-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
 
 build:
 	mkdir -p bin
@@ -37,6 +37,9 @@ milestone2-gate:
 
 milestone3-gate:
 	./scripts/phase-gate-m3.sh
+
+milestone4-gate:
+	./scripts/phase-gate-m4.sh
 
 e2e-pingpong:
 	./scripts/pingpong.sh
