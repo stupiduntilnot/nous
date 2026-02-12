@@ -235,3 +235,161 @@ func TestQueuedFollowUpKeepsSingleRunLifecycleEvents(t *testing.T) {
 		t.Fatalf("server returned error: %v", err)
 	}
 }
+
+type twoToolCallAdapter struct{}
+
+func (a twoToolCallAdapter) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 8)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		if hasToolResult(req.Messages) {
+			out <- provider.Event{Type: provider.EventTextDelta, Delta: "done"}
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
+		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "tc-1", Name: "first", Arguments: map[string]any{}}}
+		out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "tc-2", Name: "second", Arguments: map[string]any{}}}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func hasToolResult(messages []provider.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == "tool_result" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSteerDuringFirstToolSkipsRemainingToolCalls(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	firstToolStarted := make(chan struct{}, 1)
+	releaseFirstTool := make(chan struct{}, 1)
+
+	engine := core.NewEngine(core.NewRuntime(), twoToolCallAdapter{})
+	engine.SetExtensionManager(extension.NewManager())
+	engine.SetTools([]core.Tool{
+		core.ToolFunc{ToolName: "first", Run: func(ctx context.Context, _ map[string]any) (string, error) {
+			select {
+			case firstToolStarted <- struct{}{}:
+			default:
+			}
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-releaseFirstTool:
+				return "first-ok", nil
+			}
+		}},
+		core.ToolFunc{ToolName: "second", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			return "second-ok", nil
+		}},
+	})
+	srv.SetEngine(engine, core.NewCommandLoop(engine))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server command socket not ready: %v", err)
+	}
+	if err := waitForSocket(socket+".events", 2*time.Second); err != nil {
+		t.Fatalf("server event socket not ready: %v", err)
+	}
+
+	eventConn, err := net.Dial("unix", socket+".events")
+	if err != nil {
+		t.Fatalf("event stream dial failed: %v", err)
+	}
+	defer eventConn.Close()
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "a2-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "run tools", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("async prompt failed: resp=%+v err=%v", promptResp, err)
+	}
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("missing run_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	select {
+	case <-firstToolStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("first tool did not start")
+	}
+
+	steerResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "a2-steer",
+		Type:    string(protocol.CmdSteer),
+		Payload: map[string]any{"text": "interrupt"},
+	})
+	if err != nil || !steerResp.OK {
+		t.Fatalf("steer failed: resp=%+v err=%v", steerResp, err)
+	}
+	releaseFirstTool <- struct{}{}
+
+	reader := bufio.NewReader(eventConn)
+	foundSkipped := false
+	secondToolRan := false
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = eventConn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			t.Fatalf("read event failed: %v", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			t.Fatalf("decode event failed: %v", err)
+		}
+		if gotRunID, _ := env.Payload["run_id"].(string); gotRunID != runID {
+			continue
+		}
+		toolName, _ := env.Payload["tool_name"].(string)
+		switch env.Type {
+		case string(protocol.EvToolExecutionUpdate):
+			delta, _ := env.Payload["delta"].(string)
+			if toolName == "second" && delta == "second-ok" {
+				secondToolRan = true
+			}
+			if toolName == "second" && containsSkipped(delta) {
+				foundSkipped = true
+			}
+		case string(protocol.EvAgentEnd):
+			if foundSkipped || secondToolRan {
+				goto done
+			}
+		}
+	}
+
+done:
+	if secondToolRan {
+		t.Fatalf("expected second tool call to be skipped when steer was queued")
+	}
+	if !foundSkipped {
+		t.Fatalf("expected skipped tool update event for second tool")
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func containsSkipped(delta string) bool {
+	return delta == "tool_error: Skipped due to queued user message."
+}

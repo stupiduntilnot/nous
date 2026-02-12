@@ -173,6 +173,8 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		awaitNext := false
 		stepToolResults := make([]string, 0, 4)
 		var stepAssistant string
+		steeringQueued := steerPendingCheckerFromContext(ctx)
+		interruptTools := false
 
 		for ev := range e.provider.Stream(ctx, req) {
 			switch ev.Type {
@@ -183,7 +185,15 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 					return "", err
 				}
 			case provider.EventToolCall:
-				res, err := e.executeToolCall(ctx, ev.ToolCall)
+				var (
+					res string
+					err error
+				)
+				if interruptTools {
+					res, err = e.skipToolCall(ev.ToolCall, "Skipped due to queued user message.")
+				} else {
+					res, err = e.executeToolCall(ctx, ev.ToolCall)
+				}
 				if err != nil {
 					return "", err
 				}
@@ -191,6 +201,9 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				stepToolResults = append(stepToolResults, fmt.Sprintf("%s => %s", ev.ToolCall.Name, res))
 				if err := e.runtime.MessageUpdate(assistantID, res); err != nil {
 					return "", err
+				}
+				if !interruptTools && steeringQueued != nil && steeringQueued() {
+					interruptTools = true
 				}
 			case provider.EventAwaitNext:
 				awaitNext = true
@@ -304,6 +317,20 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 		}
 		result = mutated.Result
 	}
+	if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+func (e *Engine) skipToolCall(call provider.ToolCall, reason string) (string, error) {
+	if err := e.runtime.ToolExecutionStart(call.ID, call.Name); err != nil {
+		return "", err
+	}
+	defer func() { _ = e.runtime.ToolExecutionEnd(call.ID, call.Name) }()
+
+	e.runtime.Warning("tool_execution_skipped", reason)
+	result := "tool_error: " + reason
 	if err := e.runtime.ToolExecutionUpdate(call.ID, call.Name, result); err != nil {
 		return "", err
 	}

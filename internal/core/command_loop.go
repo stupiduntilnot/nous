@@ -174,6 +174,11 @@ func (l *CommandLoop) process(next queuedTurn) {
 			return
 		}
 		ctx, cancel := context.WithCancel(context.Background())
+		ctx = withSteerPendingChecker(ctx, func() bool {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			return len(l.steers) > 0
+		})
 		l.currentCancel = cancel
 		l.mu.Unlock()
 

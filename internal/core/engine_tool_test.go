@@ -55,6 +55,44 @@ func TestToolCallSequentialLoop(t *testing.T) {
 	}
 }
 
+func TestSteerQueuedSkipsRemainingToolCallsInSameAssistantMessage(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, scriptedProvider{})
+
+	executed := make([]string, 0, 2)
+	firstDone := false
+	e.SetTools([]Tool{
+		ToolFunc{ToolName: "first", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			executed = append(executed, "first")
+			firstDone = true
+			return "first-ok", nil
+		}},
+		ToolFunc{ToolName: "second", Run: func(_ context.Context, _ map[string]any) (string, error) {
+			executed = append(executed, "second")
+			return "second-ok", nil
+		}},
+	})
+
+	ctx := withSteerPendingChecker(context.Background(), func() bool {
+		return firstDone
+	})
+
+	out, err := e.Prompt(ctx, "run-steer-interrupt", "go")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+
+	if len(executed) != 1 || executed[0] != "first" {
+		t.Fatalf("expected only first tool execution, got: %v", executed)
+	}
+	if !strings.Contains(out, "first-ok") {
+		t.Fatalf("expected first tool result in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Skipped due to queued user message.") {
+		t.Fatalf("expected skipped tool marker in output, got: %q", out)
+	}
+}
+
 type captureProvider struct {
 	last provider.Request
 }
