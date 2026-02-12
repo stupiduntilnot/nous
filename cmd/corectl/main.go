@@ -15,7 +15,7 @@ import (
 
 func main() {
 	socket := flag.String("socket", "/tmp/nous-core.sock", "uds socket path")
-	requestTimeout := flag.Duration("request-timeout", 30*time.Second, "request timeout (e.g. 30s, 500ms)")
+	requestTimeout := flag.Duration("request-timeout", 90*time.Second, "request timeout (e.g. 90s, 500ms)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -45,6 +45,44 @@ func main() {
 		fmt.Print(buf.String())
 		return
 	}
+	if cmd == "__prompt_stream__" {
+		text, _ := payload["text"].(string)
+		resp, err := ipc.SendCommandWithTimeout(*socket, protocol.Envelope{
+			ID:      fmt.Sprintf("corectl-%d", time.Now().UnixNano()),
+			Type:    string(protocol.CmdPrompt),
+			Payload: map[string]any{"text": text, "wait": false},
+		}, *requestTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "request failed: %s\n", describeRequestError(string(protocol.CmdPrompt), err))
+			os.Exit(1)
+		}
+		if !resp.OK {
+			if resp.Error != nil {
+				fmt.Fprintln(os.Stderr, formatError(resp.Error))
+			} else {
+				fmt.Fprintln(os.Stderr, "request failed")
+			}
+			os.Exit(1)
+		}
+		runID, _ := resp.Payload["run_id"].(string)
+		if strings.TrimSpace(runID) == "" {
+			fmt.Fprintln(os.Stderr, "request failed: accepted prompt is missing run_id")
+			os.Exit(1)
+		}
+		events, err := ipc.CaptureRunTrace(*socket, runID, *requestTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "stream failed: %v\n", err)
+			os.Exit(1)
+		}
+		for _, ev := range events {
+			b, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			fmt.Println(string(b))
+		}
+		return
+	}
 
 	resp, err := ipc.SendCommandWithTimeout(*socket, protocol.Envelope{
 		ID:      fmt.Sprintf("corectl-%d", time.Now().UnixNano()),
@@ -52,7 +90,7 @@ func main() {
 		Payload: payload,
 	}, *requestTimeout)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "request failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "request failed: %s\n", describeRequestError(cmd, err))
 		os.Exit(1)
 	}
 	if !resp.OK {
@@ -80,6 +118,11 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			return "", nil, fmt.Errorf("prompt_async requires text")
 		}
 		return string(protocol.CmdPrompt), map[string]any{"text": strings.Join(args[1:], " "), "wait": false}, nil
+	case "prompt_stream":
+		if len(args) < 2 {
+			return "", nil, fmt.Errorf("prompt_stream requires text")
+		}
+		return "__prompt_stream__", map[string]any{"text": strings.Join(args[1:], " ")}, nil
 	case "trace":
 		if len(args) != 2 {
 			return "", nil, fmt.Errorf("trace requires run_id")
@@ -178,6 +221,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  ping")
 	fmt.Fprintln(os.Stderr, "  prompt <text>")
 	fmt.Fprintln(os.Stderr, "  prompt_async <text>")
+	fmt.Fprintln(os.Stderr, "  prompt_stream <text>")
 	fmt.Fprintln(os.Stderr, "  trace <run_id>")
 	fmt.Fprintln(os.Stderr, "  steer <text>")
 	fmt.Fprintln(os.Stderr, "  follow_up <text>")
@@ -201,4 +245,15 @@ func formatError(err *protocol.ErrorBody) string {
 		return fmt.Sprintf("%s: %s", err.Code, err.Message)
 	}
 	return fmt.Sprintf("%s: %s (%s)", err.Code, err.Message, err.Cause)
+}
+
+func describeRequestError(cmd string, err error) string {
+	if err == nil {
+		return "request failed"
+	}
+	msg := err.Error()
+	if cmd == string(protocol.CmdPrompt) && strings.Contains(msg, "i/o timeout") {
+		return msg + " (sync prompt timed out; try prompt_async or prompt_stream, or increase --request-timeout)"
+	}
+	return msg
 }

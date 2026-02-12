@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"nous/internal/protocol"
@@ -15,6 +17,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"ping"}, wantCmd: "ping"},
 		{args: []string{"prompt", "hello"}, wantCmd: "prompt"},
 		{args: []string{"prompt_async", "hello"}, wantCmd: "prompt"},
+		{args: []string{"prompt_stream", "hello"}, wantCmd: "__prompt_stream__"},
 		{args: []string{"trace", "run-1"}, wantCmd: "__trace__"},
 		{args: []string{"steer", "focus"}, wantCmd: "steer"},
 		{args: []string{"follow_up", "next"}, wantCmd: "follow_up"},
@@ -33,6 +36,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"ext", "hello", "{\"x\":1}"}, wantCmd: "extension_command"},
 		{args: []string{"prompt"}, wantErr: true},
 		{args: []string{"prompt_async"}, wantErr: true},
+		{args: []string{"prompt_stream"}, wantErr: true},
 		{args: []string{"trace"}, wantErr: true},
 	}
 
@@ -64,6 +68,19 @@ func TestParseArgsPromptAsyncSetsWaitFalse(t *testing.T) {
 	}
 }
 
+func TestParseArgsPromptStreamUsesSpecialCommand(t *testing.T) {
+	cmd, payload, err := parseArgs([]string{"prompt_stream", "hello", "world"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != "__prompt_stream__" {
+		t.Fatalf("unexpected command: %q", cmd)
+	}
+	if got, _ := payload["text"].(string); got != "hello world" {
+		t.Fatalf("unexpected prompt_stream text payload: %+v", payload)
+	}
+}
+
 func TestParseArgsTraceRequiresRunID(t *testing.T) {
 	cmd, payload, err := parseArgs([]string{"trace", "run-42"})
 	if err != nil {
@@ -86,6 +103,21 @@ func TestFormatError(t *testing.T) {
 	got = formatError(&protocol.ErrorBody{Code: "invalid_payload", Message: "text is required"})
 	if got != "invalid_payload: text is required" {
 		t.Fatalf("unexpected formatted error without cause: %q", got)
+	}
+}
+
+func TestDescribeRequestError(t *testing.T) {
+	got := describeRequestError("prompt", errors.New("read response: read unix ->/tmp/nous-core.sock: i/o timeout"))
+	if got == "" || got == "request failed" {
+		t.Fatalf("unexpected described timeout error: %q", got)
+	}
+	if want := "prompt_async"; !strings.Contains(got, want) {
+		t.Fatalf("expected timeout hint to mention %q, got: %q", want, got)
+	}
+
+	got = describeRequestError("ping", errors.New("dial uds: no such file"))
+	if got != "dial uds: no such file" {
+		t.Fatalf("unexpected generic described error: %q", got)
 	}
 }
 
