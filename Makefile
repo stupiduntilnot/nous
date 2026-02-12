@@ -1,10 +1,51 @@
-.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate milestone4-gate e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
+.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate milestone4-gate start start-small start-medium start-large small medium large list-openai-models e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
+
+SOCKET ?= /tmp/nous-core.sock
+API_BASE ?= https://api.openai.com/v1
+OPENAI_MODEL_SMALL ?= gpt-4o-mini
+OPENAI_MODEL_MEDIUM ?= gpt-4o
+OPENAI_MODEL_LARGE ?= o3
+
+START_SIZE := $(firstword $(filter small medium large,$(MAKECMDGOALS)))
+START_MODEL := $(OPENAI_MODEL_MEDIUM)
+ifeq ($(START_SIZE),small)
+START_MODEL := $(OPENAI_MODEL_SMALL)
+endif
+ifeq ($(START_SIZE),large)
+START_MODEL := $(OPENAI_MODEL_LARGE)
+endif
 
 build:
 	mkdir -p bin
 	go build -o bin/nous-core ./cmd/core
 	go build -o bin/nous-ctl ./cmd/corectl
 	go build -o bin/nous-tui ./cmd/tui
+
+start: build
+	@test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is required" >&2; exit 1)
+	@echo "starting nous-core (size=$(if $(START_SIZE),$(START_SIZE),medium) model=$(START_MODEL) socket=$(SOCKET))"
+	OPENAI_API_KEY="$$OPENAI_API_KEY" ./bin/nous-core --socket "$(SOCKET)" --provider openai --model "$(START_MODEL)" --api-base "$(API_BASE)"
+
+start-small:
+	$(MAKE) start small
+
+start-medium:
+	$(MAKE) start medium
+
+start-large:
+	$(MAKE) start large
+
+small medium large:
+	@:
+
+list-openai-models:
+	@test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is required" >&2; exit 1)
+	@if command -v jq >/dev/null 2>&1; then \
+		curl -sS https://api.openai.com/v1/models -H "Authorization: Bearer $$OPENAI_API_KEY" | jq -r '.data[].id' | sort; \
+	else \
+		echo "jq not found; printing raw JSON model list"; \
+		curl -sS https://api.openai.com/v1/models -H "Authorization: Bearer $$OPENAI_API_KEY"; \
+	fi
 
 test:
 	./scripts/phase-gate.sh

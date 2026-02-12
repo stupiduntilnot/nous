@@ -22,7 +22,7 @@ make build
 
 Binaries:
 - `bin/nous-core`
-- `bin/nousctl`
+- `bin/nous-ctl`
 - `bin/nous-tui`
 
 ### Test
@@ -45,7 +45,7 @@ Start core:
 
 Ping with CLI:
 ```bash
-./bin/nousctl --socket /tmp/nous-core.sock ping
+./bin/nous-ctl --socket /tmp/nous-core.sock ping
 ```
 
 Start TUI:
@@ -57,4 +57,16 @@ Use OpenAI provider:
 ```bash
 source ~/.zshrc
 ./bin/nous-core --socket /tmp/nous-core.sock --provider openai --model gpt-4o-mini
+```
+
+Quick start presets:
+```bash
+make start small
+make start medium
+make start large
+```
+
+List available OpenAI model IDs from your account:
+```bash
+make list-openai-models
 ```
