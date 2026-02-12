@@ -15,6 +15,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"ping"}, wantCmd: "ping"},
 		{args: []string{"prompt", "hello"}, wantCmd: "prompt"},
 		{args: []string{"prompt_async", "hello"}, wantCmd: "prompt"},
+		{args: []string{"trace", "run-1"}, wantCmd: "__trace__"},
 		{args: []string{"steer", "focus"}, wantCmd: "steer"},
 		{args: []string{"follow_up", "next"}, wantCmd: "follow_up"},
 		{args: []string{"abort"}, wantCmd: "abort"},
@@ -32,6 +33,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"ext", "hello", "{\"x\":1}"}, wantCmd: "extension_command"},
 		{args: []string{"prompt"}, wantErr: true},
 		{args: []string{"prompt_async"}, wantErr: true},
+		{args: []string{"trace"}, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -59,6 +61,19 @@ func TestParseArgsPromptAsyncSetsWaitFalse(t *testing.T) {
 	wait, ok := payload["wait"].(bool)
 	if !ok || wait {
 		t.Fatalf("prompt_async should set wait=false payload: %+v", payload)
+	}
+}
+
+func TestParseArgsTraceRequiresRunID(t *testing.T) {
+	cmd, payload, err := parseArgs([]string{"trace", "run-42"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != "__trace__" {
+		t.Fatalf("unexpected command for trace: %q", cmd)
+	}
+	if got, _ := payload["run_id"].(string); got != "run-42" {
+		t.Fatalf("trace payload missing run_id: %+v", payload)
 	}
 }
 

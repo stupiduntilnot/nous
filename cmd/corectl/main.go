@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,6 +29,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid args: %v\n", err)
 		usage()
 		os.Exit(2)
+	}
+	if cmd == "__trace__" {
+		runID, _ := payload["run_id"].(string)
+		events, err := ipc.CaptureRunTrace(*socket, runID, *requestTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trace failed: %v\n", err)
+			os.Exit(1)
+		}
+		var buf bytes.Buffer
+		if err := ipc.WriteTraceNDJSON(&buf, events); err != nil {
+			fmt.Fprintf(os.Stderr, "trace encode failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(buf.String())
+		return
 	}
 
 	resp, err := ipc.SendCommandWithTimeout(*socket, protocol.Envelope{
@@ -64,6 +80,11 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			return "", nil, fmt.Errorf("prompt_async requires text")
 		}
 		return string(protocol.CmdPrompt), map[string]any{"text": strings.Join(args[1:], " "), "wait": false}, nil
+	case "trace":
+		if len(args) != 2 {
+			return "", nil, fmt.Errorf("trace requires run_id")
+		}
+		return "__trace__", map[string]any{"run_id": args[1]}, nil
 	case "steer":
 		if len(args) < 2 {
 			return "", nil, fmt.Errorf("steer requires text")
@@ -157,6 +178,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  ping")
 	fmt.Fprintln(os.Stderr, "  prompt <text>")
 	fmt.Fprintln(os.Stderr, "  prompt_async <text>")
+	fmt.Fprintln(os.Stderr, "  trace <run_id>")
 	fmt.Fprintln(os.Stderr, "  steer <text>")
 	fmt.Fprintln(os.Stderr, "  follow_up <text>")
 	fmt.Fprintln(os.Stderr, "  abort")
