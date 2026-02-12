@@ -1578,6 +1578,144 @@ func TestGetMessagesReturnsSessionHistoryOverIPC(t *testing.T) {
 	}
 }
 
+func TestCompactSessionCommandSuccess(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+	srv.SetCompactor(core.NewDeterministicCompactor(core.CompactionSettings{
+		KeepRecentTokens: 24,
+		ThresholdTokens:  32,
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	longPrompt := strings.Repeat("x", 120)
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "compact-seed",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": longPrompt, "wait": true},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("prompt seed failed: resp=%+v err=%v", promptResp, err)
+	}
+
+	compactResp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "compact-run",
+		Type: string(protocol.CmdCompactSession),
+		Payload: map[string]any{
+			"instruction": "focus decisions",
+		},
+	})
+	if err != nil {
+		t.Fatalf("compact_session failed: %v", err)
+	}
+	if !compactResp.OK || compactResp.Type != "compaction" {
+		t.Fatalf("unexpected compact_session response: %+v", compactResp)
+	}
+	if firstKept, _ := compactResp.Payload["first_kept_entry_id"].(string); firstKept == "" {
+		t.Fatalf("missing first_kept_entry_id in response: %+v", compactResp.Payload)
+	}
+	summary, _ := compactResp.Payload["summary"].(string)
+	if !strings.Contains(summary, "Instruction: focus decisions") {
+		t.Fatalf("expected summary instruction to roundtrip, got: %q", summary)
+	}
+
+	msgResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "compact-messages",
+		Type:    string(protocol.CmdGetMessages),
+		Payload: map[string]any{},
+	})
+	if err != nil || !msgResp.OK {
+		t.Fatalf("get_messages after compact failed: resp=%+v err=%v", msgResp, err)
+	}
+	raw, ok := msgResp.Payload["messages"].([]any)
+	if !ok || len(raw) == 0 {
+		t.Fatalf("expected non-empty messages payload: %+v", msgResp.Payload)
+	}
+	first, ok := raw[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected first message shape: %+v", raw[0])
+	}
+	text, _ := first["text"].(string)
+	if !strings.Contains(text, "Compaction summary:") {
+		t.Fatalf("expected first message to be compaction summary, got: %+v", first)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestCompactSessionCommandErrorPaths(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	missingResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "compact-missing-session",
+		Type:    string(protocol.CmdCompactSession),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("compact_session missing session request failed: %v", err)
+	}
+	if missingResp.OK || missingResp.Error == nil || missingResp.Error.Code != "invalid_payload" {
+		t.Fatalf("expected invalid_payload for missing session_id: %+v", missingResp)
+	}
+
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "compact-new-session",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	}); err != nil {
+		t.Fatalf("new_session failed: %v", err)
+	}
+
+	noopResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "compact-noop",
+		Type:    string(protocol.CmdCompactSession),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("compact_session noop request failed: %v", err)
+	}
+	if noopResp.OK || noopResp.Error == nil || noopResp.Error.Code != "command_rejected" {
+		t.Fatalf("expected command_rejected for nothing_to_compact: %+v", noopResp)
+	}
+
+	badInstrResp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "compact-bad-instruction",
+		Type: string(protocol.CmdCompactSession),
+		Payload: map[string]any{
+			"instruction": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("compact_session bad instruction failed: %v", err)
+	}
+	if badInstrResp.OK || badInstrResp.Error == nil || badInstrResp.Error.Code != "invalid_payload" {
+		t.Fatalf("expected invalid_payload for non-string instruction: %+v", badInstrResp)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestAsyncPromptPersistsToOriginalSessionWhenSwitchingMidRun(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")

@@ -129,6 +129,55 @@ func (m *Manager) AppendMessageTo(sessionID string, entry MessageEntry) error {
 	return err
 }
 
+func (m *Manager) AppendCompaction(entry CompactionEntry) error {
+	_, err := m.AppendCompactionResolved(entry)
+	return err
+}
+
+func (m *Manager) AppendCompactionResolved(entry CompactionEntry) (CompactionEntry, error) {
+	m.mu.Lock()
+	activeID := m.activeID
+	m.mu.Unlock()
+	if activeID == "" {
+		return CompactionEntry{}, fmt.Errorf("no_active_session")
+	}
+	return m.AppendCompactionToResolved(activeID, entry)
+}
+
+func (m *Manager) AppendCompactionTo(sessionID string, entry CompactionEntry) error {
+	_, err := m.AppendCompactionToResolved(sessionID, entry)
+	return err
+}
+
+func (m *Manager) AppendCompactionToResolved(sessionID string, entry CompactionEntry) (CompactionEntry, error) {
+	if sessionID == "" {
+		return CompactionEntry{}, fmt.Errorf("empty_session_id")
+	}
+	if entry.Type == "" {
+		entry.Type = EntryTypeCompaction
+	}
+	if entry.Type != EntryTypeCompaction {
+		return CompactionEntry{}, fmt.Errorf("invalid_compaction_entry_type")
+	}
+	entry.Summary = strings.TrimSpace(entry.Summary)
+	entry.FirstKeptEntryID = strings.TrimSpace(entry.FirstKeptEntryID)
+	entry.Instruction = strings.TrimSpace(entry.Instruction)
+	entry.Trigger = strings.TrimSpace(entry.Trigger)
+	if entry.Summary == "" || entry.FirstKeptEntryID == "" {
+		return CompactionEntry{}, fmt.Errorf("invalid_compaction_entry")
+	}
+	if entry.ID == "" {
+		entry.ID = fmt.Sprintf("cmp-%d", time.Now().UTC().UnixNano())
+	}
+	if entry.CreatedAt == "" {
+		entry.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if err := m.AppendTo(sessionID, entry); err != nil {
+		return CompactionEntry{}, err
+	}
+	return entry, nil
+}
+
 func (m *Manager) AppendMessageToResolved(sessionID string, entry MessageEntry) (MessageEntry, error) {
 	if sessionID == "" {
 		return MessageEntry{}, fmt.Errorf("empty_session_id")
@@ -268,10 +317,15 @@ func (m *Manager) BuildMessageContext(sessionID string) ([]MessageEntry, error) 
 	out := make([]MessageEntry, 0, len(raw))
 	for _, line := range raw {
 		rec, ok := DecodeMessageEntry(line)
+		if ok {
+			out = append(out, rec)
+			continue
+		}
+		compaction, ok := DecodeCompactionEntry(line)
 		if !ok {
 			continue
 		}
-		out = append(out, rec)
+		out = applyCompactionToMessages(out, compaction)
 	}
 	return NormalizeMessageChain(out), nil
 }
@@ -320,4 +374,47 @@ func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
 
 func (m *Manager) sessionPath(id string) string {
 	return filepath.Join(m.baseDir, id+".jsonl")
+}
+
+func applyCompactionToMessages(entries []MessageEntry, compaction CompactionEntry) []MessageEntry {
+	if len(entries) == 0 {
+		return entries
+	}
+	normalized := NormalizeMessageChain(entries)
+	firstKeptIdx := -1
+	for i := range normalized {
+		if normalized[i].ID == compaction.FirstKeptEntryID {
+			firstKeptIdx = i
+			break
+		}
+	}
+	if firstKeptIdx <= 0 {
+		return normalized
+	}
+	summaryID := compaction.ID
+	if summaryID == "" {
+		summaryID = fmt.Sprintf("cmp-synth-%d", time.Now().UTC().UnixNano())
+	}
+	summaryText := strings.TrimSpace(compaction.Summary)
+	if summaryText == "" {
+		return normalized
+	}
+	summary := MessageEntry{
+		Type:      EntryTypeMessage,
+		ID:        summaryID,
+		Role:      "assistant",
+		Text:      summaryText,
+		CreatedAt: compaction.CreatedAt,
+	}
+	if summary.CreatedAt == "" {
+		summary.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+
+	kept := make([]MessageEntry, len(normalized[firstKeptIdx:]))
+	copy(kept, normalized[firstKeptIdx:])
+	kept[0].ParentID = summary.ID
+	out := make([]MessageEntry, 0, 1+len(kept))
+	out = append(out, summary)
+	out = append(out, kept...)
+	return out
 }

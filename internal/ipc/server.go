@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,9 @@ type Server struct {
 	subSeq          uint64
 	subMu           sync.Mutex
 	subscribers     map[uint64]chan protocol.Envelope
+	compactor       core.Compactor
+	compactionMu    sync.Mutex
+	retriedOverflow map[string]bool
 
 	dispatchOverride func(protocol.Envelope) protocol.ResponseEnvelope
 }
@@ -54,6 +58,8 @@ func NewServer(socketPath string) *Server {
 		timeout:         30 * time.Second,
 		logWriter:       os.Stderr,
 		subscribers:     make(map[uint64]chan protocol.Envelope),
+		compactor:       core.NewDeterministicCompactor(core.DefaultCompactionSettings),
+		retriedOverflow: make(map[string]bool),
 	}
 }
 
@@ -64,6 +70,14 @@ func (s *Server) SetEngine(engine *core.Engine, loop *core.CommandLoop) {
 
 func (s *Server) SetSessionManager(mgr *session.Manager) {
 	s.sessions = mgr
+}
+
+func (s *Server) SetCompactor(compactor core.Compactor) {
+	if compactor == nil {
+		s.compactor = core.NewDeterministicCompactor(core.DefaultCompactionSettings)
+		return
+	}
+	s.compactor = compactor
 }
 
 func (s *Server) SetCommandTimeout(d time.Duration) error {
@@ -105,13 +119,34 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.unsub = s.engine.Subscribe(func(ev core.Event) {
 			s.logRuntimeEvent(ev)
 			s.publishRuntimeEvent(ev)
+			if ev.Type == core.EventAgentEnd && ev.RunID != "" {
+				s.clearOverflowRetry(ev.RunID)
+			}
 		})
 	}
 	s.loop.SetOnTurnEnd(func(r core.TurnResult) {
 		sessionID, parentID := s.runContextFor(r.RunID)
+		if r.Err != nil {
+			if isContextOverflowError(r.Err) && s.markOverflowRetry(r.RunID) && sessionID != "" {
+				if _, _, err := s.compactSession(sessionID, "", "overflow"); err == nil {
+					if r.Kind == core.TurnFollowUp {
+						_ = s.loop.FollowUp(r.Input)
+					} else {
+						_ = s.loop.Steer(r.Input)
+					}
+				}
+			}
+			return
+		}
 		nextParentID, err := s.appendTurnRecord(sessionID, r.RunID, string(r.Kind), r.Input, r.Output, parentID)
-		if err == nil && nextParentID != "" {
+		if err != nil {
+			return
+		}
+		if nextParentID != "" {
 			s.setRunParent(r.RunID, nextParentID)
+		}
+		if sessionID != "" {
+			_, _, _ = s.compactSessionIfThreshold(sessionID)
 		}
 	})
 	_ = os.Remove(s.socketPath)
@@ -508,6 +543,51 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			Type:    "messages",
 			Payload: payload,
 		})
+	case protocol.CmdCompactSession:
+		if s.sessions == nil {
+			return responseErr(env.ID, "session_error", "session_manager_not_ready")
+		}
+		sessionID, _ := env.Payload["session_id"].(string)
+		if sessionID == "" {
+			sessionID = s.sessions.ActiveSession()
+		}
+		if sessionID == "" {
+			return responseErr(env.ID, "invalid_payload", "session_id is required")
+		}
+		instruction := ""
+		if raw, ok := env.Payload["instruction"]; ok {
+			v, ok := raw.(string)
+			if !ok {
+				return responseErr(env.ID, "invalid_payload", "instruction must be a string")
+			}
+			instruction = v
+		}
+		_, result, err := s.compactSession(sessionID, instruction, "manual")
+		if err != nil {
+			if os.IsNotExist(err) {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			if strings.Contains(err.Error(), "nothing_to_compact") {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			return responseErr(env.ID, "session_error", err.Error())
+		}
+		payload := map[string]any{
+			"session_id":          sessionID,
+			"summary":             result.Summary,
+			"first_kept_entry_id": result.FirstKeptEntryID,
+			"tokens_before":       result.TokensBefore,
+			"trigger":             "manual",
+		}
+		if strings.TrimSpace(instruction) != "" {
+			payload["instruction"] = strings.TrimSpace(instruction)
+		}
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "compaction",
+			Payload: payload,
+		})
 	case protocol.CmdExtensionCmd:
 		name, ok := env.Payload["name"].(string)
 		if !ok || name == "" {
@@ -551,11 +631,23 @@ func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelop
 	runID := fmt.Sprintf("sync-%d", time.Now().UnixNano())
 	out, err := s.engine.Prompt(context.Background(), runID, promptWithContext)
 	if err != nil {
-		return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
+		if isContextOverflowError(err) {
+			if _, _, compactErr := s.compactSession(sessionID, "", "overflow"); compactErr == nil {
+				retryPrompt, ctxErr := s.promptWithSessionContext(sessionID, text, leafID)
+				if ctxErr != nil {
+					return responseErrWithCause(reqID, "session_error", "failed to build session context", ctxErr)
+				}
+				out, err = s.engine.Prompt(context.Background(), runID+"-retry", retryPrompt)
+			}
+		}
+		if err != nil {
+			return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
+		}
 	}
 	if _, err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out, leafID); err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to persist session records", err)
 	}
+	_, _, _ = s.compactSessionIfThreshold(sessionID)
 	payload := map[string]any{
 		"output":     out,
 		"events":     events,
@@ -872,4 +964,125 @@ func (s *Server) setRunParent(runID, parentID string) {
 	if runID != "" && runID == s.activeRunID {
 		s.activeParentID = parentID
 	}
+}
+
+func (s *Server) compactSession(sessionID, instruction, trigger string) (session.CompactionEntry, core.CompactionResult, error) {
+	if s.sessions == nil {
+		return session.CompactionEntry{}, core.CompactionResult{}, fmt.Errorf("session_manager_not_ready")
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return session.CompactionEntry{}, core.CompactionResult{}, fmt.Errorf("empty_session_id")
+	}
+
+	messages, err := s.sessions.BuildMessageContext(sessionID)
+	if err != nil {
+		return session.CompactionEntry{}, core.CompactionResult{}, err
+	}
+	compactMessages := make([]core.CompactionMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.ID == "" || strings.TrimSpace(msg.Text) == "" || strings.TrimSpace(msg.Role) == "" {
+			continue
+		}
+		compactMessages = append(compactMessages, core.CompactionMessage{
+			ID:   msg.ID,
+			Role: msg.Role,
+			Text: msg.Text,
+		})
+	}
+
+	s.compactionMu.Lock()
+	compactor := s.compactor
+	s.compactionMu.Unlock()
+	if compactor == nil {
+		compactor = core.NewDeterministicCompactor(core.DefaultCompactionSettings)
+	}
+
+	result, err := compactor.Compact(compactMessages, instruction)
+	if err != nil {
+		return session.CompactionEntry{}, core.CompactionResult{}, err
+	}
+	entry := session.NewCompactionEntry(result.Summary, result.FirstKeptEntryID, instruction, result.TokensBefore, trigger)
+	entry, err = s.sessions.AppendCompactionToResolved(sessionID, entry)
+	if err != nil {
+		return session.CompactionEntry{}, core.CompactionResult{}, err
+	}
+	return entry, result, nil
+}
+
+func (s *Server) compactSessionIfThreshold(sessionID string) (session.CompactionEntry, core.CompactionResult, error) {
+	if s.sessions == nil || strings.TrimSpace(sessionID) == "" {
+		return session.CompactionEntry{}, core.CompactionResult{}, fmt.Errorf("empty_session_id")
+	}
+	messages, err := s.sessions.BuildMessageContext(sessionID)
+	if err != nil {
+		return session.CompactionEntry{}, core.CompactionResult{}, err
+	}
+	compactMessages := make([]core.CompactionMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.ID == "" || strings.TrimSpace(msg.Text) == "" || strings.TrimSpace(msg.Role) == "" {
+			continue
+		}
+		compactMessages = append(compactMessages, core.CompactionMessage{
+			ID:   msg.ID,
+			Role: msg.Role,
+			Text: msg.Text,
+		})
+	}
+
+	s.compactionMu.Lock()
+	compactor := s.compactor
+	s.compactionMu.Unlock()
+	if compactor == nil {
+		compactor = core.NewDeterministicCompactor(core.DefaultCompactionSettings)
+	}
+	if !compactor.ShouldCompact(compactor.EstimateTokens(compactMessages)) {
+		return session.CompactionEntry{}, core.CompactionResult{}, fmt.Errorf("nothing_to_compact")
+	}
+	return s.compactSession(sessionID, "", "threshold")
+}
+
+func (s *Server) markOverflowRetry(runID string) bool {
+	if strings.TrimSpace(runID) == "" {
+		return false
+	}
+	s.compactionMu.Lock()
+	defer s.compactionMu.Unlock()
+	if s.retriedOverflow == nil {
+		s.retriedOverflow = make(map[string]bool)
+	}
+	if s.retriedOverflow[runID] {
+		return false
+	}
+	s.retriedOverflow[runID] = true
+	return true
+}
+
+func (s *Server) clearOverflowRetry(runID string) {
+	if strings.TrimSpace(runID) == "" {
+		return
+	}
+	s.compactionMu.Lock()
+	defer s.compactionMu.Unlock()
+	delete(s.retriedOverflow, runID)
+}
+
+func isContextOverflowError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	patterns := []string{
+		"context_length_exceeded",
+		"maximum context length",
+		"too many tokens",
+		"token limit",
+		"prompt is too long",
+		"max tokens",
+	}
+	for _, p := range patterns {
+		if strings.Contains(msg, p) {
+			return true
+		}
+	}
+	return false
 }

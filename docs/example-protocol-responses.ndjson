@@ -8,6 +8,7 @@
 {"v":"1","id":"cmd-7a","type":"accepted","payload":{"command":"set_follow_up_mode","mode":"one-at-a-time"},"ok":true}
 {"v":"1","id":"cmd-7b","type":"state","payload":{"run_state":"running","run_id":"run-42","session_id":"sess-123","steering_mode":"all","follow_up_mode":"one-at-a-time","pending_counts":{"steer":1,"follow_up":2}},"ok":true}
 {"v":"1","id":"cmd-7c","type":"messages","payload":{"session_id":"sess-123","messages":[{"type":"message","id":"msg-1","role":"user","text":"hello","run_id":"run-42","turn_kind":"prompt","created_at":"2026-02-12T00:00:00Z"},{"type":"message","id":"msg-2","parent_id":"msg-1","role":"assistant","text":"hi","run_id":"run-42","turn_kind":"prompt","created_at":"2026-02-12T00:00:01Z"}]},"ok":true}
+{"v":"1","id":"cmd-7d","type":"compaction","payload":{"session_id":"sess-123","summary":"Compaction summary:\n- user: old context","first_kept_entry_id":"msg-2","tokens_before":7421,"trigger":"manual"},"ok":true}
 {"v":"1","id":"cmd-3","type":"session","payload":{"session_id":"sess-123","active":true},"ok":true}
 {"v":"1","id":"cmd-4","type":"result","payload":{"output":"hello","events":[],"session_id":"sess-123"},"ok":true}
 {"v":"1","id":"cmd-5","type":"extension_result","payload":{"echo":"hello"},"ok":true}

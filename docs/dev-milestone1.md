@@ -37,6 +37,7 @@ Milestone 1 完成条件：
 - `set_follow_up_mode`
 - `get_state`
 - `get_messages`
+- `compact_session`
 - `new_session`
 - `switch_session`
 - `branch_session`

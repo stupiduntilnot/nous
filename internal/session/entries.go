@@ -9,7 +9,10 @@ import (
 
 const CurrentSchemaVersion = 3
 
-const EntryTypeMessage = "message"
+const (
+	EntryTypeMessage    = "message"
+	EntryTypeCompaction = "compaction"
+)
 
 type MessageEntry struct {
 	Type      string `json:"type"`
@@ -22,6 +25,17 @@ type MessageEntry struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type CompactionEntry struct {
+	Type             string `json:"type"`
+	ID               string `json:"id,omitempty"`
+	FirstKeptEntryID string `json:"first_kept_entry_id"`
+	Summary          string `json:"summary"`
+	Instruction      string `json:"instruction,omitempty"`
+	TokensBefore     int    `json:"tokens_before,omitempty"`
+	Trigger          string `json:"trigger,omitempty"`
+	CreatedAt        string `json:"created_at"`
+}
+
 func NewMessageEntry(role, text, runID, turnKind string) MessageEntry {
 	return MessageEntry{
 		Type:      EntryTypeMessage,
@@ -30,6 +44,18 @@ func NewMessageEntry(role, text, runID, turnKind string) MessageEntry {
 		RunID:     runID,
 		TurnKind:  turnKind,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func NewCompactionEntry(summary, firstKeptEntryID, instruction string, tokensBefore int, trigger string) CompactionEntry {
+	return CompactionEntry{
+		Type:             EntryTypeCompaction,
+		Summary:          strings.TrimSpace(summary),
+		FirstKeptEntryID: strings.TrimSpace(firstKeptEntryID),
+		Instruction:      strings.TrimSpace(instruction),
+		TokensBefore:     tokensBefore,
+		Trigger:          strings.TrimSpace(trigger),
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -44,6 +70,27 @@ func DecodeMessageEntry(raw json.RawMessage) (MessageEntry, bool) {
 	}
 	if rec.Type != EntryTypeMessage || rec.Role == "" || strings.TrimSpace(rec.Text) == "" {
 		return MessageEntry{}, false
+	}
+	return rec, true
+}
+
+func DecodeCompactionEntry(raw json.RawMessage) (CompactionEntry, bool) {
+	var rec CompactionEntry
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return CompactionEntry{}, false
+	}
+	if rec.Type != EntryTypeCompaction {
+		return CompactionEntry{}, false
+	}
+	if strings.TrimSpace(rec.Summary) == "" || strings.TrimSpace(rec.FirstKeptEntryID) == "" {
+		return CompactionEntry{}, false
+	}
+	rec.Summary = strings.TrimSpace(rec.Summary)
+	rec.FirstKeptEntryID = strings.TrimSpace(rec.FirstKeptEntryID)
+	rec.Instruction = strings.TrimSpace(rec.Instruction)
+	rec.Trigger = strings.TrimSpace(rec.Trigger)
+	if rec.CreatedAt == "" {
+		rec.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	return rec, true
 }

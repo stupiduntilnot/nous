@@ -47,7 +47,7 @@ func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
 func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
 	t.Helper()
 	switch CommandType(env.Type) {
-	case CmdPing, CmdAbort, CmdNewSession, CmdGetState, CmdGetMessages:
+	case CmdPing, CmdAbort, CmdNewSession, CmdGetState, CmdGetMessages, CmdCompactSession:
 		return
 	case CmdPrompt, CmdSteer, CmdFollowUp:
 		if text, _ := env.Payload["text"].(string); text == "" {
@@ -182,6 +182,16 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		}
 		if _, ok := resp.Payload["messages"].([]any); !ok {
 			t.Fatalf("response line %d messages payload requires messages array", line)
+		}
+	case "compaction":
+		if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+			t.Fatalf("response line %d compaction payload requires session_id", line)
+		}
+		if summary, _ := resp.Payload["summary"].(string); summary == "" {
+			t.Fatalf("response line %d compaction payload requires summary", line)
+		}
+		if first, _ := resp.Payload["first_kept_entry_id"].(string); first == "" {
+			t.Fatalf("response line %d compaction payload requires first_kept_entry_id", line)
 		}
 	default:
 		// keep examples permissive for other success envelopes (session/extension_result)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -362,5 +363,85 @@ func TestBuildMessageContextFromLeaf(t *testing.T) {
 	}
 	if len(msgs) != 2 || msgs[0].ID != "a" || msgs[1].ID != "c" {
 		t.Fatalf("unexpected leaf path context: %+v", msgs)
+	}
+}
+
+func TestBuildMessageContextAppliesCompactionMarker(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID := "sess-compact"
+	path := filepath.Join(dir, sessionID+".jsonl")
+	lines := []string{
+		`{"type":"session_meta","id":"sess-compact","schema_version":3}`,
+		`{"type":"message","id":"m1","role":"user","text":"old-user","created_at":"2026-01-01T00:00:00Z"}`,
+		`{"type":"message","id":"m2","parent_id":"m1","role":"assistant","text":"old-assistant","created_at":"2026-01-01T00:00:01Z"}`,
+		`{"type":"message","id":"m3","parent_id":"m2","role":"user","text":"recent-user","created_at":"2026-01-01T00:00:02Z"}`,
+		`{"type":"compaction","id":"cmp-1","first_kept_entry_id":"m3","summary":"Compaction summary:\n- user: old-user","created_at":"2026-01-01T00:00:03Z"}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write session failed: %v", err)
+	}
+
+	msgs, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build message context failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected summary + kept message, got %d entries: %+v", len(msgs), msgs)
+	}
+	if msgs[0].ID != "cmp-1" || msgs[0].Role != "assistant" {
+		t.Fatalf("unexpected synthetic summary message: %+v", msgs[0])
+	}
+	if msgs[1].ID != "m3" || msgs[1].ParentID != "cmp-1" {
+		t.Fatalf("unexpected kept message linkage after compaction: %+v", msgs[1])
+	}
+}
+
+func TestAppendCompactionEntryPersistsAndRecovers(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	first, err := m.AppendMessageToResolved(sessionID, MessageEntry{
+		Type:      EntryTypeMessage,
+		ID:        "keep-1",
+		Role:      "user",
+		Text:      "hello",
+		CreatedAt: "2026-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("append message failed: %v", err)
+	}
+	if first.ID != "keep-1" {
+		t.Fatalf("unexpected first message id: %+v", first)
+	}
+
+	entry, err := m.AppendCompactionToResolved(sessionID, NewCompactionEntry("Compaction summary:\n- user: hello", "keep-1", "", 120, "manual"))
+	if err != nil {
+		t.Fatalf("append compaction failed: %v", err)
+	}
+	if entry.ID == "" {
+		t.Fatalf("expected persisted compaction entry id")
+	}
+
+	raw, skipped, err := m.Recover(sessionID)
+	if err != nil {
+		t.Fatalf("recover failed: %v", err)
+	}
+	if skipped != 0 {
+		t.Fatalf("expected skipped=0, got %d", skipped)
+	}
+	if len(raw) != 2 {
+		t.Fatalf("expected 2 recovered records, got %d", len(raw))
+	}
+	if _, ok := DecodeCompactionEntry(raw[1]); !ok {
+		t.Fatalf("expected second record to decode as compaction entry: %s", string(raw[1]))
 	}
 }

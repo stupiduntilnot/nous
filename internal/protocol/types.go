@@ -22,6 +22,7 @@ const (
 	CmdSetFollowUpMode CommandType = "set_follow_up_mode"
 	CmdGetState        CommandType = "get_state"
 	CmdGetMessages     CommandType = "get_messages"
+	CmdCompactSession  CommandType = "compact_session"
 	CmdNewSession      CommandType = "new_session"
 	CmdSwitchSession   CommandType = "switch_session"
 	CmdBranchSession   CommandType = "branch_session"
@@ -76,6 +77,7 @@ var validCommands = map[CommandType]struct{}{
 	CmdSetFollowUpMode: {},
 	CmdGetState:        {},
 	CmdGetMessages:     {},
+	CmdCompactSession:  {},
 	CmdNewSession:      {},
 	CmdSwitchSession:   {},
 	CmdBranchSession:   {},
