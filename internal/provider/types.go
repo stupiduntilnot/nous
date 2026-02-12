@@ -25,10 +25,8 @@ type Message struct {
 }
 
 type Request struct {
-	Prompt      string
 	Messages    []Message
 	ActiveTools []string
-	ToolResults []string
 }
 
 type Event struct {

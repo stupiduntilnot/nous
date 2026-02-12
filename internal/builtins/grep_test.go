@@ -73,7 +73,7 @@ func (grepToolCallProvider) Stream(_ context.Context, req provider.Request) <-ch
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
-		if len(req.ToolResults) > 0 {
+		if hasToolResult(req.Messages) {
 			out <- provider.Event{Type: provider.EventDone}
 			return
 		}

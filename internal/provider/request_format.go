@@ -14,18 +14,3 @@ func RenderMessages(messages []Message) string {
 	}
 	return strings.Join(lines, "\n")
 }
-
-func ResolvePrompt(req Request) string {
-	if len(req.Messages) > 0 {
-		if rendered := RenderMessages(req.Messages); rendered != "" {
-			return rendered
-		}
-	}
-	if strings.TrimSpace(req.Prompt) != "" {
-		return req.Prompt
-	}
-	if len(req.ToolResults) == 0 {
-		return ""
-	}
-	return "Tool results:\n" + strings.Join(req.ToolResults, "\n")
-}

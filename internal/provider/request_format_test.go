@@ -3,12 +3,9 @@ package provider
 import "testing"
 
 func TestResolvePromptPrefersStructuredMessages(t *testing.T) {
-	got := ResolvePrompt(Request{
-		Prompt: "legacy prompt",
-		Messages: []Message{
-			{Role: "user", Content: "hello"},
-			{Role: "tool_result", Content: "first => ok"},
-		},
+	got := RenderMessages([]Message{
+		{Role: "user", Content: "hello"},
+		{Role: "tool_result", Content: "first => ok"},
 	})
 	want := "user: hello\ntool_result: first => ok"
 	if got != want {
@@ -16,19 +13,14 @@ func TestResolvePromptPrefersStructuredMessages(t *testing.T) {
 	}
 }
 
-func TestResolvePromptFallsBackToLegacyPrompt(t *testing.T) {
-	got := ResolvePrompt(Request{Prompt: "legacy prompt"})
-	if got != "legacy prompt" {
-		t.Fatalf("unexpected prompt fallback: %q", got)
-	}
-}
-
-func TestResolvePromptFallsBackToToolResults(t *testing.T) {
-	got := ResolvePrompt(Request{
-		ToolResults: []string{"first => ok", "second => ok"},
+func TestRenderMessagesSkipsEmptyFields(t *testing.T) {
+	got := RenderMessages([]Message{
+		{Role: "", Content: "x"},
+		{Role: "user", Content: ""},
+		{Role: "user", Content: "ok"},
 	})
-	want := "Tool results:\nfirst => ok\nsecond => ok"
+	want := "user: ok"
 	if got != want {
-		t.Fatalf("unexpected tool results fallback\nwant=%q\ngot=%q", want, got)
+		t.Fatalf("unexpected rendered messages\nwant=%q\ngot=%q", want, got)
 	}
 }

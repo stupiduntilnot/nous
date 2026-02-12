@@ -14,7 +14,7 @@ func (scriptedProvider) Stream(_ context.Context, req provider.Request) <-chan p
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
-		if len(req.ToolResults) > 0 {
+		if hasToolResult(req.Messages) {
 			out <- provider.Event{Type: provider.EventDone}
 			return
 		}
@@ -93,7 +93,7 @@ func (inactiveToolCallProvider) Stream(_ context.Context, req provider.Request) 
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
-		if len(req.ToolResults) > 0 {
+		if hasToolResult(req.Messages) {
 			out <- provider.Event{Type: provider.EventDone}
 			return
 		}
@@ -159,12 +159,6 @@ func TestAwaitNextTurnLoopsWithToolResults(t *testing.T) {
 	}
 	if len(p.calls) != 2 {
 		t.Fatalf("expected two provider calls, got %d", len(p.calls))
-	}
-	if len(p.calls[1].ToolResults) != 1 || p.calls[1].ToolResults[0] != "first => tool-ok" {
-		t.Fatalf("unexpected tool results in second call: %+v", p.calls[1].ToolResults)
-	}
-	if !strings.Contains(p.calls[1].Prompt, "tool_result: first => tool-ok") {
-		t.Fatalf("expected second prompt to include structured tool_result message, got: %q", p.calls[1].Prompt)
 	}
 	if len(p.calls[1].Messages) < 2 {
 		t.Fatalf("expected second call to include structured messages, got: %+v", p.calls[1].Messages)
@@ -247,4 +241,13 @@ func TestToolCallWithoutAwaitStillContinuesNextTurn(t *testing.T) {
 	if out != "tool-okdone" {
 		t.Fatalf("unexpected output: %q", out)
 	}
+}
+
+func hasToolResult(messages []provider.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == "tool_result" {
+			return true
+		}
+	}
+	return false
 }

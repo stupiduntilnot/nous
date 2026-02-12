@@ -83,7 +83,7 @@ func (findToolCallProvider) Stream(_ context.Context, req provider.Request) <-ch
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
-		if len(req.ToolResults) > 0 {
+		if hasToolResult(req.Messages) {
 			out <- provider.Event{Type: provider.EventDone}
 			return
 		}
@@ -127,4 +127,13 @@ func mustMkdirAll(t *testing.T, path string) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatalf("mkdir %s failed: %v", path, err)
 	}
+}
+
+func hasToolResult(messages []provider.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == "tool_result" {
+			return true
+		}
+	}
+	return false
 }

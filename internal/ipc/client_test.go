@@ -91,7 +91,7 @@ func (e *echoPromptAdapter) Stream(ctx context.Context, req provider.Request) <-
 		default:
 		}
 		out <- provider.Event{Type: provider.EventStart}
-		out <- provider.Event{Type: provider.EventTextDelta, Delta: req.Prompt}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: provider.RenderMessages(req.Messages)}
 		out <- provider.Event{Type: provider.EventDone}
 	}()
 	return out
@@ -103,7 +103,7 @@ func (p toolLogProvider) Stream(_ context.Context, req provider.Request) <-chan 
 	out := make(chan provider.Event)
 	go func() {
 		defer close(out)
-		if len(req.ToolResults) > 0 {
+		if hasToolResultMessage(req.Messages) {
 			out <- provider.Event{Type: provider.EventDone}
 			return
 		}
@@ -112,6 +112,15 @@ func (p toolLogProvider) Stream(_ context.Context, req provider.Request) <-chan 
 		out <- provider.Event{Type: provider.EventDone}
 	}()
 	return out
+}
+
+func hasToolResultMessage(messages []provider.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == "tool_result" {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCorectlPing(t *testing.T) {

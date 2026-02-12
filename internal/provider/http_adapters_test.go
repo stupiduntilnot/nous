@@ -36,7 +36,7 @@ func TestOpenAIAdapterStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
-	evs := collectEvents(a.Stream(context.Background(), Request{Prompt: "hi"}))
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
 	if len(evs) < 3 {
 		t.Fatalf("unexpected event count: %d", len(evs))
 	}
@@ -74,7 +74,7 @@ func TestOpenAIAdapterToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
-	evs := collectEvents(a.Stream(context.Background(), Request{Prompt: "hi"}))
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
 	if len(evs) < 3 {
 		t.Fatalf("unexpected event count: %d", len(evs))
 	}
@@ -112,7 +112,7 @@ func TestOpenAIAdapterTextToolCallStaysAsText(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "read file",
+		Messages:    []Message{{Role: "user", Content: "read file"}},
 		ActiveTools: []string{"read", "ls"},
 	}))
 	if len(evs) < 3 {
@@ -141,7 +141,7 @@ func TestGeminiAdapterStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gemini adapter failed: %v", err)
 	}
-	evs := collectEvents(a.Stream(context.Background(), Request{Prompt: "hi"}))
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
 	if len(evs) < 3 {
 		t.Fatalf("unexpected event count: %d", len(evs))
 	}
@@ -211,7 +211,7 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "hi",
+		Messages:    []Message{{Role: "user", Content: "hi"}},
 		ActiveTools: []string{"read", "grep"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
@@ -219,7 +219,7 @@ func TestOpenAIAdapterSendsActiveTools(t *testing.T) {
 	}
 }
 
-func TestOpenAIAdapterSendsToolResultsAsFollowupContext(t *testing.T) {
+func TestOpenAIAdapterSendsToolResultAsFollowupContext(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -235,8 +235,8 @@ func TestOpenAIAdapterSendsToolResultsAsFollowupContext(t *testing.T) {
 		}
 		last, _ := rawMsgs[len(rawMsgs)-1].(map[string]any)
 		content, _ := last["content"].(string)
-		if !strings.Contains(content, "Tool results:") || !strings.Contains(content, "first => ok") {
-			t.Fatalf("tool results message missing, got: %q", content)
+		if !strings.Contains(content, "Tool result:") || !strings.Contains(content, "first => ok") {
+			t.Fatalf("tool result message missing, got: %q", content)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -253,8 +253,10 @@ func TestOpenAIAdapterSendsToolResultsAsFollowupContext(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "hi",
-		ToolResults: []string{"first => ok"},
+		Messages: []Message{
+			{Role: "user", Content: "hi"},
+			{Role: "tool_result", Content: "first => ok"},
+		},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
 		t.Fatalf("unexpected events: %+v", evs)
@@ -359,7 +361,7 @@ func TestOpenAIAdapterWriteToolSchemaRequiresPathAndContent(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "hi",
+		Messages:    []Message{{Role: "user", Content: "hi"}},
 		ActiveTools: []string{"write"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
@@ -412,7 +414,7 @@ func TestOpenAIAdapterEditToolSchemaRequiresPathOldNew(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "hi",
+		Messages:    []Message{{Role: "user", Content: "hi"}},
 		ActiveTools: []string{"edit"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {
@@ -465,7 +467,7 @@ func TestOpenAIAdapterBashToolSchemaRequiresCommand(t *testing.T) {
 		t.Fatalf("new openai adapter failed: %v", err)
 	}
 	evs := collectEvents(a.Stream(context.Background(), Request{
-		Prompt:      "hi",
+		Messages:    []Message{{Role: "user", Content: "hi"}},
 		ActiveTools: []string{"bash"},
 	}))
 	if len(evs) < 3 || evs[1].Type != EventTextDelta {

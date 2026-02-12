@@ -132,7 +132,6 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	var final string
 	messages := []Message{{Role: RoleUser, Text: prompt}}
 	req := provider.Request{
-		Prompt:      renderPromptFromMessages(messages),
 		Messages:    providerMessagesFromCore(messages),
 		ActiveTools: e.activeToolNames(),
 	}
@@ -185,8 +184,6 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 			for _, toolResult := range stepToolResults {
 				messages = appendMessage(messages, RoleToolResult, toolResult)
 			}
-			req.ToolResults = append(req.ToolResults, stepToolResults...)
-			req.Prompt = renderPromptFromMessages(messages)
 			req.Messages = providerMessagesFromCore(messages)
 			if awaitNext {
 				e.runtime.Status("await_next: continue_with_tool_results")

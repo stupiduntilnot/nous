@@ -23,7 +23,7 @@ func (m *MockAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 		}
 
 		out <- Event{Type: EventStart}
-		text := fmt.Sprintf("mock response: %s", ResolvePrompt(req))
+		text := fmt.Sprintf("mock response: %s", RenderMessages(req.Messages))
 		out <- Event{Type: EventTextDelta, Delta: text}
 		out <- Event{Type: EventDone}
 	}()

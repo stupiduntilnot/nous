@@ -50,7 +50,7 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		defer close(out)
 		out <- Event{Type: EventStart}
 
-		messages := buildOpenAIMessages(req)
+		messages := buildOpenAIMessages(req.Messages)
 		payload := map[string]any{
 			"model":    a.model,
 			"messages": messages,
@@ -145,40 +145,25 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 	return out
 }
 
-func buildOpenAIMessages(req Request) []map[string]string {
-	if len(req.Messages) > 0 {
-		out := make([]map[string]string, 0, len(req.Messages))
-		for _, msg := range req.Messages {
-			role := strings.TrimSpace(msg.Role)
-			content := strings.TrimSpace(msg.Content)
-			if role == "" || content == "" {
-				continue
-			}
-			switch role {
-			case "assistant", "system", "user":
-			case "tool_result":
-				role = "user"
-				content = "Tool result:\n" + content
-			default:
-				role = "user"
-			}
-			out = append(out, map[string]string{
-				"role":    role,
-				"content": content,
-			})
+func buildOpenAIMessages(messages []Message) []map[string]string {
+	out := make([]map[string]string, 0, len(messages))
+	for _, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		content := strings.TrimSpace(msg.Content)
+		if role == "" || content == "" {
+			continue
 		}
-		if len(out) > 0 {
-			return out
+		switch role {
+		case "assistant", "system", "user":
+		case "tool_result":
+			role = "user"
+			content = "Tool result:\n" + content
+		default:
+			role = "user"
 		}
-	}
-
-	out := []map[string]string{
-		{"role": "user", "content": req.Prompt},
-	}
-	if len(req.ToolResults) > 0 {
 		out = append(out, map[string]string{
-			"role":    "user",
-			"content": "Tool results:\n" + strings.Join(req.ToolResults, "\n"),
+			"role":    role,
+			"content": content,
 		})
 	}
 	return out
