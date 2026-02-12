@@ -5,7 +5,7 @@ API_BASE ?= https://api.openai.com/v1
 WORKDIR ?= $(CURDIR)
 OPENAI_MODEL_SMALL ?= gpt-4o-mini
 OPENAI_MODEL_MEDIUM ?= gpt-4o
-OPENAI_MODEL_LARGE ?= gpt-5.2-codex
+OPENAI_MODEL_LARGE ?= gpt-5.2-chat-latest
 
 START_SIZE := $(firstword $(filter small medium large,$(MAKECMDGOALS)))
 START_MODEL := $(OPENAI_MODEL_MEDIUM)
