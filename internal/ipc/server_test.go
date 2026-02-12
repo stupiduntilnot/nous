@@ -2,13 +2,17 @@ package ipc
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"nous/internal/core"
 )
 
 func TestSetCommandTimeoutValidation(t *testing.T) {
@@ -126,5 +130,36 @@ func TestCoreInvalidCommand(t *testing.T) {
 	cancel()
 	if err := <-errCh; err != nil {
 		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestPublishRuntimeEventDropsSlowSubscriber(t *testing.T) {
+	srv := NewServer("/tmp/oma-subscriber-drop.sock")
+	var logs bytes.Buffer
+	srv.SetLogWriter(&logs)
+
+	subID, ch := srv.addSubscriber()
+	for i := 0; i < 400; i++ {
+		srv.publishRuntimeEvent(core.Event{Type: core.EventStatus, RunID: "run-1", Message: "burst"})
+	}
+	srv.subMu.Lock()
+	_, ok := srv.subscribers[subID]
+	srv.subMu.Unlock()
+	if ok {
+		t.Fatalf("expected slow subscriber to be dropped after overflow")
+	}
+
+	closed := false
+	for i := 0; i < 500; i++ {
+		if _, open := <-ch; !open {
+			closed = true
+			break
+		}
+	}
+	if !closed {
+		t.Fatalf("expected dropped subscriber channel to close")
+	}
+	if !strings.Contains(logs.String(), "event_subscriber_dropped") {
+		t.Fatalf("expected drop warning log, got logs=%q", logs.String())
 	}
 }

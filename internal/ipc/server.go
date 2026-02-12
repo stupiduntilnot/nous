@@ -929,12 +929,26 @@ func (s *Server) publishRuntimeEvent(ev core.Event) {
 	}
 
 	s.subMu.Lock()
-	defer s.subMu.Unlock()
-	for _, ch := range s.subscribers {
+	dropped := make([]uint64, 0, 1)
+	for id, ch := range s.subscribers {
 		select {
 		case ch <- env:
 		default:
+			dropped = append(dropped, id)
 		}
+	}
+	for _, id := range dropped {
+		ch, ok := s.subscribers[id]
+		if !ok {
+			continue
+		}
+		delete(s.subscribers, id)
+		close(ch)
+	}
+	s.subMu.Unlock()
+
+	for range dropped {
+		s.writeLog(core.NewLogEvent("warning", "event_subscriber_dropped"))
 	}
 }
 

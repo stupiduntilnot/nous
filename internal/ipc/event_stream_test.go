@@ -604,3 +604,95 @@ func TestToolExecutionProgressUpdatesAreStreamed(t *testing.T) {
 func containsSkipped(delta string) bool {
 	return delta == "tool_error: Skipped due to queued user message."
 }
+
+type burstDeltaProvider struct {
+	total int
+}
+
+func (p burstDeltaProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 8)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		for i := 0; i < p.total; i++ {
+			out <- provider.Event{Type: provider.EventTextDelta, Delta: fmt.Sprintf("d-%03d", i)}
+		}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func TestEventStreamDeliversAllBurstMessageUpdates(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	const totalDeltas = 300
+	engine := core.NewEngine(core.NewRuntime(), burstDeltaProvider{total: totalDeltas})
+	engine.SetExtensionManager(extension.NewManager())
+	srv.SetEngine(engine, core.NewCommandLoop(engine))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server command socket not ready: %v", err)
+	}
+	if err := waitForSocket(socket+".events", 2*time.Second); err != nil {
+		t.Fatalf("server event socket not ready: %v", err)
+	}
+
+	eventConn, err := net.Dial("unix", socket+".events")
+	if err != nil {
+		t.Fatalf("event stream dial failed: %v", err)
+	}
+	defer eventConn.Close()
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "burst-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "burst", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("async prompt failed: resp=%+v err=%v", promptResp, err)
+	}
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("missing run_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	reader := bufio.NewReader(eventConn)
+	deltaCount := 0
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = eventConn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			t.Fatalf("read event failed: %v", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			t.Fatalf("decode event failed: %v", err)
+		}
+		if gotRunID, _ := env.Payload["run_id"].(string); gotRunID != runID {
+			continue
+		}
+		if env.Type == string(protocol.EvMessageUpdate) {
+			deltaCount++
+		}
+		if env.Type == string(protocol.EvAgentEnd) {
+			break
+		}
+	}
+	if deltaCount != totalDeltas {
+		t.Fatalf("expected %d streamed message updates, got %d", totalDeltas, deltaCount)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
