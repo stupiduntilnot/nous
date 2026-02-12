@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -71,6 +72,22 @@ func main() {
 			if sid := extractSessionID(resp.Payload); sid != "" {
 				activeSession = sid
 			}
+			if resp.Type == "accepted" {
+				if cmdName, _ := resp.Payload["command"].(string); cmdName == "prompt" {
+					runID, _ := resp.Payload["run_id"].(string)
+					if runID == "" {
+						fmt.Printf("ok: type=%s payload=%v\n", resp.Type, resp.Payload)
+						continue
+					}
+					if err := streamRunEvents(socket, runID); err != nil {
+						fmt.Printf("event stream error: %v\n", err)
+					}
+					if activeSession != "" {
+						fmt.Printf("session: %s\n", activeSession)
+					}
+					continue
+				}
+			}
 			if resp.Type == "result" {
 				renderResult(resp.Payload)
 				if activeSession != "" {
@@ -111,7 +128,7 @@ func parseInput(line string) (cmd string, payload map[string]any, quit bool, err
 		if text == "" {
 			return "", nil, false, fmt.Errorf("prompt text is required")
 		}
-		return string(protocol.CmdPrompt), map[string]any{"text": text, "wait": true}, false, nil
+		return string(protocol.CmdPrompt), map[string]any{"text": text, "wait": false}, false, nil
 	case strings.HasPrefix(line, "steer "):
 		text := strings.TrimSpace(strings.TrimPrefix(line, "steer "))
 		if text == "" {
@@ -199,39 +216,85 @@ func renderResult(payload map[string]any) {
 		if !ok {
 			continue
 		}
-		tp, _ := ev["type"].(string)
-		switch tp {
-		case "message_update":
-			if delta, ok := ev["delta"].(string); ok && delta != "" {
-				fmt.Printf("message: %s\n", delta)
-			}
-		case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-			fmt.Printf("tool: %s %v\n", tp, ev)
-		case "agent_start", "agent_end", "turn_start", "turn_end":
-			fmt.Printf("status: %s\n", tp)
-		case "status":
-			if msg, ok := ev["message"].(string); ok && msg != "" {
-				fmt.Printf("status: %s\n", msg)
-			}
-		case "warning":
-			code, _ := ev["code"].(string)
-			msg, _ := ev["message"].(string)
-			if code != "" || msg != "" {
-				fmt.Printf("warning: %s %s\n", code, msg)
-			}
-		case "error":
-			code, _ := ev["code"].(string)
-			msg, _ := ev["message"].(string)
-			cause, _ := ev["cause"].(string)
-			if cause != "" {
-				fmt.Printf("error: %s %s cause=%s\n", code, msg, cause)
-				break
-			}
-			if code != "" || msg != "" {
-				fmt.Printf("error: %s %s\n", code, msg)
-			}
+		renderEvent(ev)
+	}
+}
+
+func renderEvent(ev map[string]any) {
+	tp, _ := ev["type"].(string)
+	switch tp {
+	case "message_update":
+		if delta, ok := ev["delta"].(string); ok && delta != "" {
+			fmt.Printf("assistant: %s\n", delta)
+		}
+	case "tool_execution_start", "tool_execution_update", "tool_execution_end":
+		fmt.Printf("tool: %s %v\n", tp, ev)
+	case "agent_start", "agent_end", "turn_start", "turn_end":
+		fmt.Printf("status: %s\n", tp)
+	case "status":
+		if msg, ok := ev["message"].(string); ok && msg != "" {
+			fmt.Printf("status: %s\n", msg)
+		}
+	case "warning":
+		code, _ := ev["code"].(string)
+		msg, _ := ev["message"].(string)
+		if code != "" || msg != "" {
+			fmt.Printf("warning: %s %s\n", code, msg)
+		}
+	case "error":
+		code, _ := ev["code"].(string)
+		msg, _ := ev["message"].(string)
+		cause, _ := ev["cause"].(string)
+		if cause != "" {
+			fmt.Printf("error: %s %s cause=%s\n", code, msg, cause)
+			break
+		}
+		if code != "" || msg != "" {
+			fmt.Printf("error: %s %s\n", code, msg)
 		}
 	}
+}
+
+func streamRunEvents(socket, runID string) error {
+	conn, err := net.DialTimeout("unix", socket+".events", 500*time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("connect event stream: %w", err)
+	}
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = conn.SetReadDeadline(time.Now().Add(400 * time.Millisecond))
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			if err == io.EOF {
+				return fmt.Errorf("event stream closed before agent_end")
+			}
+			return fmt.Errorf("read event stream: %w", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			continue
+		}
+		evRunID, _ := env.Payload["run_id"].(string)
+		if evRunID != runID {
+			continue
+		}
+		ev := make(map[string]any, len(env.Payload)+1)
+		ev["type"] = env.Type
+		for k, v := range env.Payload {
+			ev[k] = v
+		}
+		renderEvent(ev)
+		if env.Type == string(protocol.EvAgentEnd) {
+			return nil
+		}
+	}
+	return fmt.Errorf("timed out waiting for run end: %s", runID)
 }
 
 func printStatus(socket, activeSession string) {

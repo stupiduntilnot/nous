@@ -83,6 +83,20 @@ func TestParseInputSetActiveToolsClear(t *testing.T) {
 	}
 }
 
+func TestParseInputPromptIsNonBlocking(t *testing.T) {
+	_, payload, _, err := parseInput("prompt hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wait, ok := payload["wait"].(bool)
+	if !ok {
+		t.Fatalf("missing wait flag in payload: %+v", payload)
+	}
+	if wait {
+		t.Fatalf("prompt should default to non-blocking wait=false payload: %+v", payload)
+	}
+}
+
 func TestRenderResultRendersStatusWarningErrorEvents(t *testing.T) {
 	payload := map[string]any{
 		"output": "ok",
@@ -117,6 +131,33 @@ func TestRenderResultRendersStatusWarningErrorEvents(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("render output missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestRenderResultRendersMessageUpdatesAsAssistant(t *testing.T) {
+	payload := map[string]any{
+		"events": []any{
+			map[string]any{"type": "message_update", "delta": "hello chunk"},
+		},
+	}
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	os.Stdout = w
+	renderResult(payload)
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout failed: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "assistant: hello chunk") {
+		t.Fatalf("expected streamed assistant chunk in output, got:\n%s", out)
 	}
 }
 

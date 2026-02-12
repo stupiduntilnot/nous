@@ -449,7 +449,8 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 }
 
 func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
-	if _, err := s.ensureActiveSession(); err != nil {
+	sessionID, err := s.ensureActiveSession()
+	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
 
@@ -462,8 +463,9 @@ func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
 		ID:   reqID,
 		Type: "accepted",
 		Payload: map[string]any{
-			"command": "prompt",
-			"run_id":  runID,
+			"command":    "prompt",
+			"run_id":     runID,
+			"session_id": sessionID,
 		},
 	})
 }
