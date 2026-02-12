@@ -14,9 +14,10 @@ import (
 const metaType = "session_meta"
 
 type SessionMeta struct {
-	Type     string `json:"type"`
-	ID       string `json:"id"`
-	ParentID string `json:"parent_id,omitempty"`
+	Type          string `json:"type"`
+	ID            string `json:"id"`
+	ParentID      string `json:"parent_id,omitempty"`
+	SchemaVersion int    `json:"schema_version,omitempty"`
 }
 
 type Manager struct {
@@ -66,9 +67,10 @@ func (m *Manager) BranchFrom(parentID string) (string, error) {
 func (m *Manager) createSessionLocked(parentID string) (string, error) {
 	id := fmt.Sprintf("sess-%d", time.Now().UTC().UnixNano())
 	meta, err := json.Marshal(SessionMeta{
-		Type:     metaType,
-		ID:       id,
-		ParentID: parentID,
+		Type:          metaType,
+		ID:            id,
+		ParentID:      parentID,
+		SchemaVersion: CurrentSchemaVersion,
 	})
 	if err != nil {
 		return "", err
@@ -204,6 +206,22 @@ func (m *Manager) BuildContext(sessionID string) ([]json.RawMessage, error) {
 	return out, nil
 }
 
+func (m *Manager) BuildMessageContext(sessionID string) ([]MessageEntry, error) {
+	raw, err := m.BuildContext(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MessageEntry, 0, len(raw))
+	for _, line := range raw {
+		rec, ok := DecodeMessageEntry(line)
+		if !ok {
+			continue
+		}
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
 func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
 	f, err := os.Open(m.sessionPath(sessionID))
 	if err != nil {
@@ -222,17 +240,20 @@ func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
 			return SessionMeta{}, err
 		}
 		if meta.Type != metaType {
-			return SessionMeta{ID: sessionID, Type: metaType}, nil
+			return SessionMeta{ID: sessionID, Type: metaType, SchemaVersion: 1}, nil
 		}
 		if meta.ID == "" {
 			meta.ID = sessionID
+		}
+		if meta.SchemaVersion <= 0 {
+			meta.SchemaVersion = 1
 		}
 		return meta, nil
 	}
 	if err := scanner.Err(); err != nil {
 		return SessionMeta{}, err
 	}
-	return SessionMeta{ID: sessionID, Type: metaType}, nil
+	return SessionMeta{ID: sessionID, Type: metaType, SchemaVersion: 1}, nil
 }
 
 func (m *Manager) sessionPath(id string) string {

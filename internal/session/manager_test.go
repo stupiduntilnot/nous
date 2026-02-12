@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -196,5 +197,66 @@ func TestManagerBranchAndBuildContext(t *testing.T) {
 	}
 	if first["id"] != "p1" || second["id"] != "c1" {
 		t.Fatalf("unexpected context order: first=%v second=%v", first, second)
+	}
+}
+
+func TestManagerNewSessionWritesSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	id, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+
+	f, err := os.Open(filepath.Join(dir, id+".jsonl"))
+	if err != nil {
+		t.Fatalf("open session failed: %v", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		t.Fatalf("session file should contain metadata line")
+	}
+	var meta SessionMeta
+	if err := json.Unmarshal(scanner.Bytes(), &meta); err != nil {
+		t.Fatalf("decode metadata failed: %v", err)
+	}
+	if meta.SchemaVersion != CurrentSchemaVersion {
+		t.Fatalf("unexpected schema version: got=%d want=%d", meta.SchemaVersion, CurrentSchemaVersion)
+	}
+}
+
+func TestBuildMessageContextSupportsLegacySessionLines(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+
+	sessionID := "sess-legacy"
+	path := filepath.Join(dir, sessionID+".jsonl")
+	lines := []string{
+		`{"type":"session_meta","id":"sess-legacy"}`,
+		`{"type":"message","role":"user","text":"hello","created_at":"2026-01-01T00:00:00Z"}`,
+		`{"role":"assistant","text":"world","created_at":"2026-01-01T00:00:01Z"}`,
+		`{"type":"other","role":"user","text":"skip me"}`,
+	}
+	if err := os.WriteFile(path, []byte(lines[0]+"\n"+lines[1]+"\n"+lines[2]+"\n"+lines[3]+"\n"), 0o644); err != nil {
+		t.Fatalf("write legacy session failed: %v", err)
+	}
+
+	msgs, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build message context failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 legacy-compatible message entries, got %d", len(msgs))
+	}
+	if msgs[0].Role != "user" || msgs[1].Role != "assistant" {
+		t.Fatalf("unexpected decoded message roles: %+v", msgs)
 	}
 }

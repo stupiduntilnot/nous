@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,15 +44,6 @@ type Server struct {
 	subscribers     map[uint64]chan protocol.Envelope
 
 	dispatchOverride func(protocol.Envelope) protocol.ResponseEnvelope
-}
-
-type sessionMessageRecord struct {
-	Type      string `json:"type"`
-	Role      string `json:"role"`
-	Text      string `json:"text"`
-	RunID     string `json:"run_id,omitempty"`
-	TurnKind  string `json:"turn_kind,omitempty"`
-	CreatedAt string `json:"created_at"`
 }
 
 func NewServer(socketPath string) *Server {
@@ -493,63 +483,18 @@ func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output string) 
 			return err
 		}
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if err := s.sessions.AppendTo(sessionID, sessionMessageRecord{
-		Type:      "message",
-		Role:      "user",
-		Text:      input,
-		RunID:     runID,
-		TurnKind:  kind,
-		CreatedAt: now,
-	}); err != nil {
+	if err := s.sessions.AppendTo(sessionID, session.NewMessageEntry("user", input, runID, kind)); err != nil {
 		return err
 	}
-	return s.sessions.AppendTo(sessionID, sessionMessageRecord{
-		Type:      "message",
-		Role:      "assistant",
-		Text:      output,
-		RunID:     runID,
-		TurnKind:  kind,
-		CreatedAt: now,
-	})
+	return s.sessions.AppendTo(sessionID, session.NewMessageEntry("assistant", output, runID, kind))
 }
 
 func (s *Server) promptWithSessionContext(sessionID, prompt string) (string, error) {
-	records, err := s.sessions.BuildContext(sessionID)
+	records, err := s.sessions.BuildMessageContext(sessionID)
 	if err != nil {
 		return "", err
 	}
-	if len(records) == 0 {
-		return prompt, nil
-	}
-
-	lines := make([]string, 0, len(records))
-	for _, raw := range records {
-		var rec sessionMessageRecord
-		if err := json.Unmarshal(raw, &rec); err != nil {
-			continue
-		}
-		if rec.Type != "message" || rec.Role == "" || strings.TrimSpace(rec.Text) == "" {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("%s: %s", rec.Role, rec.Text))
-	}
-	if len(lines) == 0 {
-		return prompt, nil
-	}
-	if len(lines) > 20 {
-		lines = lines[len(lines)-20:]
-	}
-
-	var b strings.Builder
-	b.WriteString("Conversation so far:\n")
-	for _, line := range lines {
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	b.WriteString("user: ")
-	b.WriteString(prompt)
-	return b.String(), nil
+	return session.BuildPromptContext(records, prompt, 20), nil
 }
 
 func responseOK(env protocol.Envelope) protocol.ResponseEnvelope {
