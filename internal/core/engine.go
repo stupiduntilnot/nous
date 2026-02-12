@@ -94,7 +94,17 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	if err := e.runtime.StartRun(runID); err != nil {
 		return "", err
 	}
-	defer func() { _ = e.runtime.EndRun() }()
+	if e.ext != nil {
+		if err := e.ext.RunRunStartHooks(runID); err != nil {
+			return "", err
+		}
+	}
+	defer func() {
+		if e.ext != nil {
+			_ = e.ext.RunRunEndHooks(runID, e.runtime.TurnNumber())
+		}
+		_ = e.runtime.EndRun()
+	}()
 
 	if err := e.runtime.StartTurn(); err != nil {
 		return "", err

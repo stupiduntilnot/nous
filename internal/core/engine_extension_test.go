@@ -119,6 +119,35 @@ func TestEngineRunsTurnEndHook(t *testing.T) {
 	}
 }
 
+func TestEngineRunsRunLifecycleHooks(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, provider.NewMockAdapter())
+
+	m := extension.NewManager()
+	startCalled := false
+	endCalled := false
+	m.RegisterRunStartHook(func(in extension.RunStartHookInput) error {
+		if in.RunID == "run-ext-lifecycle" {
+			startCalled = true
+		}
+		return nil
+	})
+	m.RegisterRunEndHook(func(in extension.RunEndHookInput) error {
+		if in.RunID == "run-ext-lifecycle" && in.Turn == 1 {
+			endCalled = true
+		}
+		return nil
+	})
+	e.SetExtensionManager(m)
+
+	if _, err := e.Prompt(context.Background(), "run-ext-lifecycle", "hello"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if !startCalled || !endCalled {
+		t.Fatalf("expected run lifecycle hooks to be called: start=%v end=%v", startCalled, endCalled)
+	}
+}
+
 func TestEngineExecutesExtensionRegisteredTool(t *testing.T) {
 	r := NewRuntime()
 	e := NewEngine(r, scriptedProvider{})

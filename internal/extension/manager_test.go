@@ -89,6 +89,34 @@ func TestTurnEndHookInvoked(t *testing.T) {
 	}
 }
 
+func TestRunStartAndRunEndHooksInvoked(t *testing.T) {
+	m := NewManager()
+	startCalled := false
+	endCalled := false
+	m.RegisterRunStartHook(func(in RunStartHookInput) error {
+		if in.RunID == "run-1" {
+			startCalled = true
+		}
+		return nil
+	})
+	m.RegisterRunEndHook(func(in RunEndHookInput) error {
+		if in.RunID == "run-1" && in.Turn == 2 {
+			endCalled = true
+		}
+		return nil
+	})
+
+	if err := m.RunRunStartHooks("run-1"); err != nil {
+		t.Fatalf("run_start hooks failed: %v", err)
+	}
+	if err := m.RunRunEndHooks("run-1", 2); err != nil {
+		t.Fatalf("run_end hooks failed: %v", err)
+	}
+	if !startCalled || !endCalled {
+		t.Fatalf("expected run hooks to be invoked: start=%v end=%v", startCalled, endCalled)
+	}
+}
+
 func TestRegisterToolAndCommand(t *testing.T) {
 	m := NewManager()
 	if err := m.RegisterTool("echo", func(args map[string]any) (string, error) { return "ok", nil }); err != nil {

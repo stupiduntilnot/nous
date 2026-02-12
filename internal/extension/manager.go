@@ -41,10 +41,21 @@ type TurnEndHookInput struct {
 	Turn  int
 }
 
+type RunStartHookInput struct {
+	RunID string
+}
+
+type RunEndHookInput struct {
+	RunID string
+	Turn  int
+}
+
 type InputHook func(InputHookInput) (InputHookOutput, error)
 type ToolCallHook func(ToolCallHookInput) (ToolCallHookOutput, error)
 type ToolResultHook func(ToolResultHookInput) (ToolResultHookOutput, error)
 type TurnEndHook func(TurnEndHookInput) error
+type RunStartHook func(RunStartHookInput) error
+type RunEndHook func(RunEndHookInput) error
 
 type Manager struct {
 	mu sync.RWMutex
@@ -56,6 +67,8 @@ type Manager struct {
 	toolCallHooks   []ToolCallHook
 	toolResultHooks []ToolResultHook
 	turnEndHooks    []TurnEndHook
+	runStartHooks   []RunStartHook
+	runEndHooks     []RunEndHook
 }
 
 func NewManager() *Manager {
@@ -140,6 +153,18 @@ func (m *Manager) RegisterTurnEndHook(h TurnEndHook) {
 	m.turnEndHooks = append(m.turnEndHooks, h)
 }
 
+func (m *Manager) RegisterRunStartHook(h RunStartHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runStartHooks = append(m.runStartHooks, h)
+}
+
+func (m *Manager) RegisterRunEndHook(h RunEndHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runEndHooks = append(m.runEndHooks, h)
+}
+
 func (m *Manager) RunInputHooks(text string) (InputHookOutput, error) {
 	m.mu.RLock()
 	hooks := append([]InputHook(nil), m.inputHooks...)
@@ -207,6 +232,32 @@ func (m *Manager) RunTurnEndHooks(runID string, turn int) error {
 
 	for _, h := range hooks {
 		if err := h(TurnEndHookInput{RunID: runID, Turn: turn}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RunRunStartHooks(runID string) error {
+	m.mu.RLock()
+	hooks := append([]RunStartHook(nil), m.runStartHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		if err := h(RunStartHookInput{RunID: runID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RunRunEndHooks(runID string, turn int) error {
+	m.mu.RLock()
+	hooks := append([]RunEndHook(nil), m.runEndHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		if err := h(RunEndHookInput{RunID: runID, Turn: turn}); err != nil {
 			return err
 		}
 	}
