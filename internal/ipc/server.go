@@ -38,6 +38,7 @@ type Server struct {
 	runMu           sync.Mutex
 	activeRunID     string
 	activeSessionID string
+	activeParentID  string
 	eventSeq        uint64
 	subSeq          uint64
 	subMu           sync.Mutex
@@ -107,8 +108,11 @@ func (s *Server) Serve(ctx context.Context) error {
 		})
 	}
 	s.loop.SetOnTurnEnd(func(r core.TurnResult) {
-		sessionID := s.sessionIDForRun(r.RunID)
-		_ = s.appendTurnRecord(sessionID, r.RunID, string(r.Kind), r.Input, r.Output)
+		sessionID, parentID := s.runContextFor(r.RunID)
+		nextParentID, err := s.appendTurnRecord(sessionID, r.RunID, string(r.Kind), r.Input, r.Output, parentID)
+		if err == nil && nextParentID != "" {
+			s.setRunParent(r.RunID, nextParentID)
+		}
 	})
 	_ = os.Remove(s.socketPath)
 
@@ -335,6 +339,14 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		if !ok || text == "" {
 			return responseErr(env.ID, "invalid_payload", "text is required")
 		}
+		leafID := ""
+		if rawLeaf, exists := env.Payload["leaf_id"]; exists {
+			parsed, ok := rawLeaf.(string)
+			if !ok {
+				return responseErr(env.ID, "invalid_payload", "leaf_id must be a string")
+			}
+			leafID = parsed
+		}
 		wait := true
 		if rawWait, exists := env.Payload["wait"]; exists {
 			b, ok := rawWait.(bool)
@@ -344,9 +356,9 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			wait = b
 		}
 		if !wait {
-			return s.promptAsync(env.ID, text)
+			return s.promptAsync(env.ID, text, leafID)
 		}
-		return s.promptSync(env.ID, text)
+		return s.promptSync(env.ID, text, leafID)
 	case protocol.CmdSteer:
 		text, ok := env.Payload["text"].(string)
 		if !ok || text == "" {
@@ -520,12 +532,12 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 	}
 }
 
-func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
+func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelope {
 	sessionID, err := s.ensureActiveSession()
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
-	promptWithContext, err := s.promptWithSessionContext(sessionID, text)
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text, leafID)
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
 	}
@@ -541,27 +553,31 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 	if err != nil {
 		return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
 	}
-	if err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out); err != nil {
+	if _, err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out, leafID); err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to persist session records", err)
 	}
+	payload := map[string]any{
+		"output":     out,
+		"events":     events,
+		"session_id": sessionID,
+	}
+	if leafID != "" {
+		payload["leaf_id"] = leafID
+	}
 	return responseOK(protocol.Envelope{
-		V:    protocol.Version,
-		ID:   reqID,
-		Type: "result",
-		Payload: map[string]any{
-			"output":     out,
-			"events":     events,
-			"session_id": sessionID,
-		},
+		V:       protocol.Version,
+		ID:      reqID,
+		Type:    "result",
+		Payload: payload,
 	})
 }
 
-func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
+func (s *Server) promptAsync(reqID, text, leafID string) protocol.ResponseEnvelope {
 	sessionID, err := s.ensureActiveSession()
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
-	promptWithContext, err := s.promptWithSessionContext(sessionID, text)
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text, leafID)
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
 	}
@@ -570,16 +586,20 @@ func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
 	if err != nil {
 		return responseErr(reqID, "command_rejected", err.Error())
 	}
-	s.setActiveRunSession(runID, sessionID)
+	s.setActiveRunContext(runID, sessionID, leafID)
+	payload := map[string]any{
+		"command":    "prompt",
+		"run_id":     runID,
+		"session_id": sessionID,
+	}
+	if leafID != "" {
+		payload["leaf_id"] = leafID
+	}
 	return responseOK(protocol.Envelope{
-		V:    protocol.Version,
-		ID:   reqID,
-		Type: "accepted",
-		Payload: map[string]any{
-			"command":    "prompt",
-			"run_id":     runID,
-			"session_id": sessionID,
-		},
+		V:       protocol.Version,
+		ID:      reqID,
+		Type:    "accepted",
+		Payload: payload,
 	})
 }
 
@@ -593,22 +613,41 @@ func (s *Server) ensureActiveSession() (string, error) {
 	return s.sessions.NewSession()
 }
 
-func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output string) error {
+func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output, parentID string) (string, error) {
 	if sessionID == "" {
 		var err error
 		sessionID, err = s.ensureActiveSession()
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
-	if err := s.sessions.AppendMessageTo(sessionID, session.NewMessageEntry("user", input, runID, kind)); err != nil {
-		return err
+	user := session.NewMessageEntry("user", input, runID, kind)
+	if parentID != "" {
+		user.ParentID = parentID
 	}
-	return s.sessions.AppendMessageTo(sessionID, session.NewMessageEntry("assistant", output, runID, kind))
+	user, err := s.sessions.AppendMessageToResolved(sessionID, user)
+	if err != nil {
+		return "", err
+	}
+	assistant := session.NewMessageEntry("assistant", output, runID, kind)
+	assistant.ParentID = user.ID
+	assistant, err = s.sessions.AppendMessageToResolved(sessionID, assistant)
+	if err != nil {
+		return "", err
+	}
+	return assistant.ID, nil
 }
 
-func (s *Server) promptWithSessionContext(sessionID, prompt string) (string, error) {
-	records, err := s.sessions.BuildMessageContext(sessionID)
+func (s *Server) promptWithSessionContext(sessionID, prompt, leafID string) (string, error) {
+	var (
+		records []session.MessageEntry
+		err     error
+	)
+	if leafID != "" {
+		records, err = s.sessions.BuildMessageContextFromLeaf(sessionID, leafID)
+	} else {
+		records, err = s.sessions.BuildMessageContext(sessionID)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -810,18 +849,27 @@ func (s *Server) statePayload() map[string]any {
 	}
 }
 
-func (s *Server) setActiveRunSession(runID, sessionID string) {
+func (s *Server) setActiveRunContext(runID, sessionID, parentID string) {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	s.activeRunID = runID
 	s.activeSessionID = sessionID
+	s.activeParentID = parentID
 }
 
-func (s *Server) sessionIDForRun(runID string) string {
+func (s *Server) runContextFor(runID string) (sessionID, parentID string) {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	if runID != "" && runID == s.activeRunID {
-		return s.activeSessionID
+		return s.activeSessionID, s.activeParentID
 	}
-	return ""
+	return "", ""
+}
+
+func (s *Server) setRunParent(runID, parentID string) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	if runID != "" && runID == s.activeRunID {
+		s.activeParentID = parentID
+	}
 }

@@ -877,6 +877,127 @@ func TestPromptWaitIncludesPriorSessionContext(t *testing.T) {
 	}
 }
 
+func TestPromptWaitIncludesLeafPathContext(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+	srv.engine = core.NewEngine(core.NewRuntime(), &echoPromptAdapter{})
+	srv.loop = core.NewCommandLoop(srv.engine)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := mgr.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	leafLeft, _ := seedLeafMessageTree(t, mgr, sessionID)
+	srv.SetSessionManager(mgr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "leaf-sync",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "leaf follow", "wait": true, "leaf_id": leafLeft},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("leaf prompt failed: resp=%+v err=%v", resp, err)
+	}
+	out, _ := resp.Payload["output"].(string)
+	if !strings.Contains(out, "assistant: left-a") {
+		t.Fatalf("expected left branch in prompt context, got: %s", out)
+	}
+	if strings.Contains(out, "assistant: right-a") {
+		t.Fatalf("did not expect right branch in prompt context: %s", out)
+	}
+
+	msgs, err := mgr.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build message context failed: %v", err)
+	}
+	if len(msgs) < 2 {
+		t.Fatalf("expected appended user/assistant messages, got %d", len(msgs))
+	}
+	user := msgs[len(msgs)-2]
+	if user.Role != "user" || user.ParentID != leafLeft {
+		t.Fatalf("expected leaf-based parent linkage, got user=%+v", user)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestAsyncPromptWithLeafPersistsParentLinkage(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+	srv.engine = core.NewEngine(core.NewRuntime(), &echoPromptAdapter{})
+	srv.loop = core.NewCommandLoop(srv.engine)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := mgr.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	leafLeft, _ := seedLeafMessageTree(t, mgr, sessionID)
+	srv.SetSessionManager(mgr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "leaf-async",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "leaf async", "wait": false, "leaf_id": leafLeft},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("async leaf prompt failed: resp=%+v err=%v", resp, err)
+	}
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+
+	msgs, err := mgr.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build message context failed: %v", err)
+	}
+	if len(msgs) < 2 {
+		t.Fatalf("expected appended user/assistant messages, got %d", len(msgs))
+	}
+	user := msgs[len(msgs)-2]
+	assistant := msgs[len(msgs)-1]
+	if user.Role != "user" || user.ParentID != leafLeft {
+		t.Fatalf("expected async user parent to leaf, got user=%+v", user)
+	}
+	if assistant.Role != "assistant" || assistant.ParentID != user.ID {
+		t.Fatalf("expected async assistant parent to new user, got assistant=%+v", assistant)
+	}
+	if !strings.Contains(assistant.Text, "assistant: left-a") || strings.Contains(assistant.Text, "assistant: right-a") {
+		t.Fatalf("expected assistant output from left branch context only, got: %s", assistant.Text)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestPromptPersistsSessionRecords(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")
@@ -980,6 +1101,24 @@ func TestPromptWaitFalseIsAccepted(t *testing.T) {
 	if err := <-errCh; err != nil {
 		t.Fatalf("server returned error: %v", err)
 	}
+}
+
+func seedLeafMessageTree(t *testing.T, mgr *session.Manager, sessionID string) (leftLeafID, rightLeafID string) {
+	t.Helper()
+	entries := []session.MessageEntry{
+		{Type: session.EntryTypeMessage, ID: "root-u", Role: "user", Text: "root-q", CreatedAt: "2026-01-01T00:00:00Z"},
+		{Type: session.EntryTypeMessage, ID: "root-a", ParentID: "root-u", Role: "assistant", Text: "root-a", CreatedAt: "2026-01-01T00:00:01Z"},
+		{Type: session.EntryTypeMessage, ID: "left-u", ParentID: "root-a", Role: "user", Text: "left-q", CreatedAt: "2026-01-01T00:00:02Z"},
+		{Type: session.EntryTypeMessage, ID: "left-a", ParentID: "left-u", Role: "assistant", Text: "left-a", CreatedAt: "2026-01-01T00:00:03Z"},
+		{Type: session.EntryTypeMessage, ID: "right-u", ParentID: "root-a", Role: "user", Text: "right-q", CreatedAt: "2026-01-01T00:00:04Z"},
+		{Type: session.EntryTypeMessage, ID: "right-a", ParentID: "right-u", Role: "assistant", Text: "right-a", CreatedAt: "2026-01-01T00:00:05Z"},
+	}
+	for _, entry := range entries {
+		if _, err := mgr.AppendMessageToResolved(sessionID, entry); err != nil {
+			t.Fatalf("append seed message failed: %v entry=%+v", err, entry)
+		}
+	}
+	return "left-a", "right-a"
 }
 
 func TestCommandTimeoutReturnsStandardError(t *testing.T) {

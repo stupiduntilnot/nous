@@ -1,6 +1,7 @@
 {"v":"1","id":"cmd-1","type":"ping","payload":{}}
 {"v":"1","id":"cmd-2","type":"prompt","payload":{"text":"hello"}}
 {"v":"1","id":"cmd-2a","type":"prompt","payload":{"text":"hello async","wait":false}}
+{"v":"1","id":"cmd-2b","type":"prompt","payload":{"text":"continue from branch","leaf_id":"msg-42"}}
 {"v":"1","id":"cmd-3","type":"steer","payload":{"text":"focus on brevity"}}
 {"v":"1","id":"cmd-4","type":"follow_up","payload":{"text":"append one summary line"}}
 {"v":"1","id":"cmd-5","type":"set_active_tools","payload":{"tools":["demo.echo"]}}

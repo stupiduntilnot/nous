@@ -26,7 +26,7 @@
     "extension_command": ["name"]
   },
   "x-command-payload-optional": {
-    "prompt": ["wait"],
+    "prompt": ["wait", "leaf_id"],
     "steer": [],
     "follow_up": [],
     "abort": []

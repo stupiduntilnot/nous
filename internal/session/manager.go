@@ -110,42 +110,57 @@ func (m *Manager) Append(record any) error {
 }
 
 func (m *Manager) AppendMessage(entry MessageEntry) error {
+	_, err := m.AppendMessageResolved(entry)
+	return err
+}
+
+func (m *Manager) AppendMessageResolved(entry MessageEntry) (MessageEntry, error) {
 	m.mu.Lock()
 	activeID := m.activeID
 	m.mu.Unlock()
 	if activeID == "" {
-		return fmt.Errorf("no_active_session")
+		return MessageEntry{}, fmt.Errorf("no_active_session")
 	}
-	return m.AppendMessageTo(activeID, entry)
+	return m.AppendMessageToResolved(activeID, entry)
 }
 
 func (m *Manager) AppendMessageTo(sessionID string, entry MessageEntry) error {
+	_, err := m.AppendMessageToResolved(sessionID, entry)
+	return err
+}
+
+func (m *Manager) AppendMessageToResolved(sessionID string, entry MessageEntry) (MessageEntry, error) {
 	if sessionID == "" {
-		return fmt.Errorf("empty_session_id")
-	}
-	history, err := m.BuildMessageContext(sessionID)
-	if err != nil {
-		return err
+		return MessageEntry{}, fmt.Errorf("empty_session_id")
 	}
 	if entry.Type == "" {
 		entry.Type = EntryTypeMessage
 	}
 	if entry.Type != EntryTypeMessage {
-		return fmt.Errorf("invalid_message_entry_type")
+		return MessageEntry{}, fmt.Errorf("invalid_message_entry_type")
 	}
 	if strings.TrimSpace(entry.Text) == "" || entry.Role == "" {
-		return fmt.Errorf("invalid_message_entry")
+		return MessageEntry{}, fmt.Errorf("invalid_message_entry")
 	}
 	if entry.ID == "" {
 		entry.ID = fmt.Sprintf("msg-%d", time.Now().UTC().UnixNano())
 	}
-	if entry.ParentID == "" && len(history) > 0 {
-		entry.ParentID = history[len(history)-1].ID
+	if entry.ParentID == "" {
+		history, err := m.BuildMessageContext(sessionID)
+		if err != nil {
+			return MessageEntry{}, err
+		}
+		if len(history) > 0 {
+			entry.ParentID = history[len(history)-1].ID
+		}
 	}
 	if entry.CreatedAt == "" {
 		entry.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	return m.AppendTo(sessionID, entry)
+	if err := m.AppendTo(sessionID, entry); err != nil {
+		return MessageEntry{}, err
+	}
+	return entry, nil
 }
 
 func (m *Manager) AppendTo(sessionID string, record any) error {

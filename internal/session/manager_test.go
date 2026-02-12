@@ -299,6 +299,45 @@ func TestAppendMessageToAssignsIDAndParent(t *testing.T) {
 	}
 }
 
+func TestAppendMessageToResolvedHonorsExplicitParent(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+
+	root, err := m.AppendMessageToResolved(sessionID, MessageEntry{
+		Type:      EntryTypeMessage,
+		ID:        "root",
+		Role:      "user",
+		Text:      "root",
+		CreatedAt: "2026-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("append root failed: %v", err)
+	}
+	if root.ID != "root" {
+		t.Fatalf("expected explicit id to be preserved: %+v", root)
+	}
+
+	child, err := m.AppendMessageToResolved(sessionID, MessageEntry{
+		Type:      EntryTypeMessage,
+		Role:      "assistant",
+		Text:      "branch",
+		ParentID:  "root",
+		CreatedAt: "2026-01-01T00:00:01Z",
+	})
+	if err != nil {
+		t.Fatalf("append child failed: %v", err)
+	}
+	if child.ParentID != "root" {
+		t.Fatalf("expected explicit parent id to be preserved: %+v", child)
+	}
+}
+
 func TestBuildMessageContextFromLeaf(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewManager(dir)

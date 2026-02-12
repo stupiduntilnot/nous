@@ -82,6 +82,7 @@ func TestDispatchSetQueueModesValidatesPayload(t *testing.T) {
 	badCases := []protocol.Envelope{
 		{ID: "bad1", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "invalid"}},
 		{ID: "bad2", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": 123}},
+		{ID: "bad3", Type: string(protocol.CmdPrompt), Payload: map[string]any{"text": "hello", "leaf_id": 123}},
 	}
 	for _, tc := range badCases {
 		resp := srv.dispatch(tc)
