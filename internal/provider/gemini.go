@@ -41,12 +41,13 @@ func (a *GeminiAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 	go func() {
 		defer close(out)
 		out <- Event{Type: EventStart}
+		prompt := ResolvePrompt(req)
 
 		payload := map[string]any{
 			"contents": []map[string]any{
 				{
 					"parts": []map[string]string{
-						{"text": req.Prompt},
+						{"text": prompt},
 					},
 				},
 			},

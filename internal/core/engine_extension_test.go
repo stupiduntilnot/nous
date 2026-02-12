@@ -35,8 +35,11 @@ func TestEngineAppliesInputHookBeforeProviderCall(t *testing.T) {
 	if _, err := e.Prompt(context.Background(), "run-ext-1", "hello"); err != nil {
 		t.Fatalf("prompt failed: %v", err)
 	}
-	if p.last.Prompt != "HELLO" {
+	if p.last.Prompt != "user: HELLO" {
 		t.Fatalf("input hook did not transform prompt, got %q", p.last.Prompt)
+	}
+	if len(p.last.Messages) != 1 || p.last.Messages[0].Role != "user" || p.last.Messages[0].Content != "HELLO" {
+		t.Fatalf("structured messages not populated from transformed prompt: %+v", p.last.Messages)
 	}
 }
 

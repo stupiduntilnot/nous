@@ -261,6 +261,59 @@ func TestOpenAIAdapterSendsToolResultsAsFollowupContext(t *testing.T) {
 	}
 }
 
+func TestOpenAIAdapterUsesStructuredMessages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		rawMsgs, ok := req["messages"].([]any)
+		if !ok || len(rawMsgs) != 2 {
+			t.Fatalf("expected two structured messages, got: %#v", req["messages"])
+		}
+		first, _ := rawMsgs[0].(map[string]any)
+		if role, _ := first["role"].(string); role != "user" {
+			t.Fatalf("unexpected first role: %#v", first)
+		}
+		if content, _ := first["content"].(string); content != "please summarize" {
+			t.Fatalf("unexpected first content: %#v", first)
+		}
+		second, _ := rawMsgs[1].(map[string]any)
+		if role, _ := second["role"].(string); role != "user" {
+			t.Fatalf("tool_result should map to user role, got: %#v", second)
+		}
+		if content, _ := second["content"].(string); !strings.Contains(content, "Tool result:") {
+			t.Fatalf("expected tool_result wrapper content, got: %#v", second)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Messages: []Message{
+			{Role: "user", Content: "please summarize"},
+			{Role: "tool_result", Content: "first => ok"},
+		},
+	}))
+	if len(evs) < 3 || evs[1].Type != EventTextDelta {
+		t.Fatalf("unexpected events: %+v", evs)
+	}
+}
+
 func TestOpenAIAdapterWriteToolSchemaRequiresPathAndContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

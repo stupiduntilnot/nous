@@ -163,8 +163,15 @@ func TestAwaitNextTurnLoopsWithToolResults(t *testing.T) {
 	if len(p.calls[1].ToolResults) != 1 || p.calls[1].ToolResults[0] != "first => tool-ok" {
 		t.Fatalf("unexpected tool results in second call: %+v", p.calls[1].ToolResults)
 	}
-	if !strings.Contains(p.calls[1].Prompt, "Tool results:") {
-		t.Fatalf("expected second prompt to include tool results, got: %q", p.calls[1].Prompt)
+	if !strings.Contains(p.calls[1].Prompt, "tool_result: first => tool-ok") {
+		t.Fatalf("expected second prompt to include structured tool_result message, got: %q", p.calls[1].Prompt)
+	}
+	if len(p.calls[1].Messages) < 2 {
+		t.Fatalf("expected second call to include structured messages, got: %+v", p.calls[1].Messages)
+	}
+	last := p.calls[1].Messages[len(p.calls[1].Messages)-1]
+	if last.Role != "tool_result" || last.Content != "first => tool-ok" {
+		t.Fatalf("unexpected structured message tail: %+v", last)
 	}
 	if out != "tool-okfinal-answer" {
 		t.Fatalf("unexpected output: %q", out)

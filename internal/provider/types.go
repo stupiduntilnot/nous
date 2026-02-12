@@ -19,8 +19,14 @@ type ToolCall struct {
 	Arguments map[string]any
 }
 
+type Message struct {
+	Role    string
+	Content string
+}
+
 type Request struct {
 	Prompt      string
+	Messages    []Message
 	ActiveTools []string
 	ToolResults []string
 }

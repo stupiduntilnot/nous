@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"nous/internal/extension"
@@ -121,18 +120,22 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	}
 
 	var final string
+	messages := []Message{{Role: RoleUser, Text: prompt}}
 	req := provider.Request{
-		Prompt:      prompt,
+		Prompt:      renderPromptFromMessages(messages),
+		Messages:    providerMessagesFromCore(messages),
 		ActiveTools: e.activeToolNames(),
 	}
 	for step := 0; step < 8; step++ {
 		awaitNext := false
 		stepToolResults := make([]string, 0, 4)
+		var stepAssistant string
 
 		for ev := range e.provider.Stream(ctx, req) {
 			switch ev.Type {
 			case provider.EventTextDelta:
 				final += ev.Delta
+				stepAssistant += ev.Delta
 				if err := e.runtime.MessageUpdate(assistantID, ev.Delta); err != nil {
 					return "", err
 				}
@@ -158,6 +161,7 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				return "", err
 			}
 		}
+		messages = appendMessage(messages, RoleAssistant, stepAssistant)
 		// Continue the run whenever this turn produced tool results.
 		// Some providers do not emit explicit await-next markers even when
 		// tool calls are present, but pi-style semantics still require
@@ -168,8 +172,12 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				e.runtime.Error("tool_loop_limit_exceeded", "tool await-next loop exceeded max rounds", err)
 				return "", err
 			}
+			for _, toolResult := range stepToolResults {
+				messages = appendMessage(messages, RoleToolResult, toolResult)
+			}
 			req.ToolResults = append(req.ToolResults, stepToolResults...)
-			req.Prompt = appendToolResultsToPrompt(req.Prompt, stepToolResults)
+			req.Prompt = renderPromptFromMessages(messages)
+			req.Messages = providerMessagesFromCore(messages)
 			if awaitNext {
 				e.runtime.Status("await_next: continue_with_tool_results")
 			}
@@ -182,22 +190,6 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		return "", err
 	}
 	return final, nil
-}
-
-func appendToolResultsToPrompt(prompt string, toolResults []string) string {
-	if len(toolResults) == 0 {
-		return prompt
-	}
-	var b strings.Builder
-	b.WriteString(prompt)
-	b.WriteString("\n\nTool results:\n")
-	for _, line := range toolResults {
-		b.WriteString("- ")
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	b.WriteString("\nUse the tool results above to answer directly. Do not call tools again.\n")
-	return strings.TrimSpace(b.String())
 }
 
 func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (string, error) {
