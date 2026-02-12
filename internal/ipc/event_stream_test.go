@@ -493,6 +493,114 @@ func TestEventStreamPreservesOrderUnderRetryThenSuccess(t *testing.T) {
 	}
 }
 
+type progressEventsProvider struct {
+	calls int
+}
+
+func (p *progressEventsProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	p.calls++
+	out := make(chan provider.Event, 4)
+	go func(call int) {
+		defer close(out)
+		if call == 1 {
+			out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "tc-progress", Name: "progressive", Arguments: map[string]any{}}}
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
+		out <- provider.Event{Type: provider.EventDone}
+	}(p.calls)
+	return out
+}
+
+func TestToolExecutionProgressUpdatesAreStreamed(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	engine := core.NewEngine(core.NewRuntime(), &progressEventsProvider{})
+	engine.SetExtensionManager(extension.NewManager())
+	engine.SetTools([]core.Tool{
+		core.ProgressiveToolFunc{
+			ToolName: "progressive",
+			Run: func(_ context.Context, _ map[string]any, progress core.ToolProgressFunc) (string, error) {
+				progress("10%")
+				progress("50%")
+				return "complete", nil
+			},
+		},
+	})
+	srv.SetEngine(engine, core.NewCommandLoop(engine))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server command socket not ready: %v", err)
+	}
+	if err := waitForSocket(socket+".events", 2*time.Second); err != nil {
+		t.Fatalf("server event socket not ready: %v", err)
+	}
+
+	eventConn, err := net.Dial("unix", socket+".events")
+	if err != nil {
+		t.Fatalf("event stream dial failed: %v", err)
+	}
+	defer eventConn.Close()
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "progress-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "run tool", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("async prompt failed: resp=%+v err=%v", promptResp, err)
+	}
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("missing run_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	reader := bufio.NewReader(eventConn)
+	updates := make([]string, 0, 4)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = eventConn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			t.Fatalf("read event failed: %v", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			t.Fatalf("decode event failed: %v", err)
+		}
+		if gotRunID, _ := env.Payload["run_id"].(string); gotRunID != runID {
+			continue
+		}
+		if env.Type == string(protocol.EvToolExecutionUpdate) {
+			delta, _ := env.Payload["delta"].(string)
+			updates = append(updates, delta)
+		}
+		if env.Type == string(protocol.EvAgentEnd) {
+			break
+		}
+	}
+
+	if len(updates) < 3 {
+		t.Fatalf("expected multiple progress updates, got: %v", updates)
+	}
+	if updates[0] != "10%" || updates[1] != "50%" || updates[len(updates)-1] != "complete" {
+		t.Fatalf("unexpected streamed progress updates: %v", updates)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func containsSkipped(delta string) bool {
 	return delta == "tool_error: Skipped due to queued user message."
 }

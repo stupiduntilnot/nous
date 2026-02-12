@@ -289,3 +289,92 @@ func hasToolResult(messages []provider.Message) bool {
 	}
 	return false
 }
+
+type progressToolProvider struct {
+	calls int
+}
+
+func (p *progressToolProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	p.calls++
+	out := make(chan provider.Event, 4)
+	go func(call int) {
+		defer close(out)
+		if call == 1 {
+			out <- provider.Event{Type: provider.EventToolCall, ToolCall: provider.ToolCall{ID: "t-progress", Name: "progressive"}}
+			out <- provider.Event{Type: provider.EventDone}
+			return
+		}
+		out <- provider.Event{Type: provider.EventDone}
+	}(p.calls)
+	return out
+}
+
+func TestProgressiveToolEmitsMultipleExecutionUpdates(t *testing.T) {
+	r := NewRuntime()
+	p := &progressToolProvider{}
+	e := NewEngine(r, p)
+	e.SetTools([]Tool{
+		ProgressiveToolFunc{
+			ToolName: "progressive",
+			Run: func(_ context.Context, _ map[string]any, progress ToolProgressFunc) (string, error) {
+				progress("10%")
+				progress("50%")
+				return "complete", nil
+			},
+		},
+	})
+
+	updates := make([]string, 0, 4)
+	unsub := e.Subscribe(func(ev Event) {
+		if ev.Type == EventToolExecutionUpdate && ev.ToolCallID == "t-progress" {
+			updates = append(updates, ev.Delta)
+		}
+	})
+	defer unsub()
+
+	out, err := e.Prompt(context.Background(), "run-tool-progress", "go")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if !strings.Contains(out, "complete") {
+		t.Fatalf("expected final tool result in output, got: %q", out)
+	}
+	if len(updates) < 3 {
+		t.Fatalf("expected progress + final updates, got: %v", updates)
+	}
+	if updates[0] != "10%" || updates[1] != "50%" {
+		t.Fatalf("unexpected progress update order: %v", updates)
+	}
+	if updates[len(updates)-1] != "complete" {
+		t.Fatalf("expected final update to carry tool result, got: %v", updates)
+	}
+}
+
+func TestNonProgressToolStillEmitsSingleExecutionUpdate(t *testing.T) {
+	r := NewRuntime()
+	p := &progressToolProvider{}
+	e := NewEngine(r, p)
+	e.SetTools([]Tool{
+		ToolFunc{
+			ToolName: "progressive",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				return "complete", nil
+			},
+		},
+	})
+
+	updates := make([]string, 0, 2)
+	unsub := e.Subscribe(func(ev Event) {
+		if ev.Type == EventToolExecutionUpdate && ev.ToolCallID == "t-progress" {
+			updates = append(updates, ev.Delta)
+		}
+	})
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-tool-single-update", "go"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if len(updates) != 1 || updates[0] != "complete" {
+		t.Fatalf("expected single final update for non-progress tool, got: %v", updates)
+	}
+}

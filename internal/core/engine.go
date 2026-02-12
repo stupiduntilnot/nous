@@ -429,7 +429,18 @@ func (e *Engine) executeToolCall(ctx context.Context, call provider.ToolCall) (s
 		e.runtime.Warning("tool_not_active", err.Error())
 		return fmt.Sprintf("tool_error: %s", err.Error()), nil
 	}
-	result, err := tool.Execute(ctx, call.Arguments)
+	var result string
+	if progressive, ok := tool.(ProgressiveTool); ok {
+		result, err = progressive.ExecuteWithProgress(ctx, call.Arguments, func(delta string) {
+			delta = strings.TrimSpace(delta)
+			if delta == "" {
+				return
+			}
+			_ = e.runtime.ToolExecutionUpdate(call.ID, call.Name, delta)
+		})
+	} else {
+		result, err = tool.Execute(ctx, call.Arguments)
+	}
 	if err != nil {
 		e.runtime.Warning("tool_execution_error", err.Error())
 		return fmt.Sprintf("tool_error: %v", err), nil
