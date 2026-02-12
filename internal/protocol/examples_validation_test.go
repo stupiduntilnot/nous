@@ -47,8 +47,12 @@ func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
 func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
 	t.Helper()
 	switch CommandType(env.Type) {
-	case CmdPing, CmdAbort, CmdNewSession, CmdGetState, CmdGetMessages, CmdCompactSession:
+	case CmdPing, CmdAbort, CmdNewSession, CmdGetState, CmdGetMessages, CmdCompactSession, CmdGetTree:
 		return
+	case CmdSetLeaf:
+		if leafID, _ := env.Payload["leaf_id"].(string); leafID == "" {
+			t.Fatalf("command line %d (%s) requires payload.leaf_id", line, env.Type)
+		}
 	case CmdPrompt, CmdSteer, CmdFollowUp:
 		if text, _ := env.Payload["text"].(string); text == "" {
 			t.Fatalf("command line %d (%s) requires non-empty payload.text", line, env.Type)
@@ -182,6 +186,20 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		}
 		if _, ok := resp.Payload["messages"].([]any); !ok {
 			t.Fatalf("response line %d messages payload requires messages array", line)
+		}
+	case "leaf":
+		if sid, _ := resp.Payload["session_id"].(string); sid == "" {
+			t.Fatalf("response line %d leaf payload requires session_id", line)
+		}
+		if leafID, _ := resp.Payload["leaf_id"].(string); leafID == "" {
+			t.Fatalf("response line %d leaf payload requires leaf_id", line)
+		}
+	case "tree":
+		if _, ok := resp.Payload["session_id"].(string); !ok {
+			t.Fatalf("response line %d tree payload requires session_id", line)
+		}
+		if _, ok := resp.Payload["nodes"].([]any); !ok {
+			t.Fatalf("response line %d tree payload requires nodes array", line)
 		}
 	case "compaction":
 		if sid, _ := resp.Payload["session_id"].(string); sid == "" {

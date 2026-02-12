@@ -10,6 +10,8 @@
 {"v":"1","id":"cmd-7b","type":"get_state","payload":{}}
 {"v":"1","id":"cmd-7c","type":"get_messages","payload":{}}
 {"v":"1","id":"cmd-7d","type":"compact_session","payload":{"instruction":"focus unresolved decisions"}}
+{"v":"1","id":"cmd-7e","type":"set_leaf","payload":{"session_id":"sess-123","leaf_id":"msg-2"}}
+{"v":"1","id":"cmd-7f","type":"get_tree","payload":{"session_id":"sess-123"}}
 {"v":"1","id":"cmd-8","type":"new_session","payload":{}}
 {"v":"1","id":"cmd-9","type":"switch_session","payload":{"session_id":"sess-123"}}
 {"v":"1","id":"cmd-10","type":"branch_session","payload":{"session_id":"sess-123"}}

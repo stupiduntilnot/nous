@@ -23,8 +23,9 @@ type SessionMeta struct {
 type Manager struct {
 	baseDir string
 
-	mu       sync.Mutex
-	activeID string
+	mu           sync.Mutex
+	activeID     string
+	activeLeaves map[string]string
 }
 
 func NewManager(baseDir string) (*Manager, error) {
@@ -34,7 +35,10 @@ func NewManager(baseDir string) (*Manager, error) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, err
 	}
-	return &Manager{baseDir: baseDir}, nil
+	return &Manager{
+		baseDir:      baseDir,
+		activeLeaves: make(map[string]string),
+	}, nil
 }
 
 func (m *Manager) ActiveSession() string {
@@ -209,6 +213,9 @@ func (m *Manager) AppendMessageToResolved(sessionID string, entry MessageEntry) 
 	if err := m.AppendTo(sessionID, entry); err != nil {
 		return MessageEntry{}, err
 	}
+	m.mu.Lock()
+	m.activeLeaves[sessionID] = entry.ID
+	m.mu.Unlock()
 	return entry, nil
 }
 
@@ -338,6 +345,71 @@ func (m *Manager) BuildMessageContextFromLeaf(sessionID, leafID string) ([]Messa
 	return BuildMessagePath(entries, leafID), nil
 }
 
+func (m *Manager) BuildMessageContextFromActiveLeaf(sessionID string) ([]MessageEntry, error) {
+	entries, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	activeLeaf := m.activeLeafLocked(sessionID)
+	if activeLeaf == "" {
+		return entries, nil
+	}
+	return BuildMessagePath(entries, activeLeaf), nil
+}
+
+func (m *Manager) BuildMessageTree(sessionID string) ([]MessageEntry, error) {
+	return m.BuildMessageContext(sessionID)
+}
+
+func (m *Manager) SetActiveLeaf(sessionID, leafID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("empty_session_id")
+	}
+	if _, err := os.Stat(m.sessionPath(sessionID)); err != nil {
+		return err
+	}
+
+	leafID = strings.TrimSpace(leafID)
+	if leafID == "" {
+		m.mu.Lock()
+		delete(m.activeLeaves, sessionID)
+		m.mu.Unlock()
+		return nil
+	}
+
+	entries, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, rec := range entries {
+		if rec.ID == leafID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("leaf_not_found")
+	}
+
+	m.mu.Lock()
+	m.activeLeaves[sessionID] = leafID
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *Manager) ActiveLeaf(sessionID string) (string, error) {
+	if sessionID == "" {
+		return "", fmt.Errorf("empty_session_id")
+	}
+	if _, err := os.Stat(m.sessionPath(sessionID)); err != nil {
+		return "", err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeLeaves[sessionID], nil
+}
+
 func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
 	f, err := os.Open(m.sessionPath(sessionID))
 	if err != nil {
@@ -374,6 +446,12 @@ func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
 
 func (m *Manager) sessionPath(id string) string {
 	return filepath.Join(m.baseDir, id+".jsonl")
+}
+
+func (m *Manager) activeLeafLocked(sessionID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeLeaves[sessionID]
 }
 
 func applyCompactionToMessages(entries []MessageEntry, compaction CompactionEntry) []MessageEntry {

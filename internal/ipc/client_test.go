@@ -937,6 +937,188 @@ func TestPromptWaitIncludesLeafPathContext(t *testing.T) {
 	}
 }
 
+func TestSetLeafAffectsPromptContextSelectionOverIPC(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+	srv.engine = core.NewEngine(core.NewRuntime(), &echoPromptAdapter{})
+	srv.loop = core.NewCommandLoop(srv.engine)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := mgr.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	_, rightLeaf := seedLeafMessageTree(t, mgr, sessionID)
+	srv.SetSessionManager(mgr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	setLeafResp, err := SendCommand(socket, protocol.Envelope{
+		ID:   "set-leaf-right",
+		Type: string(protocol.CmdSetLeaf),
+		Payload: map[string]any{
+			"leaf_id": rightLeaf,
+		},
+	})
+	if err != nil || !setLeafResp.OK || setLeafResp.Type != "leaf" {
+		t.Fatalf("set_leaf failed: resp=%+v err=%v", setLeafResp, err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "leaf-default-follow",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "follow default leaf", "wait": true},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("prompt failed: resp=%+v err=%v", resp, err)
+	}
+	out, _ := resp.Payload["output"].(string)
+	if !strings.Contains(out, "assistant: right-a") {
+		t.Fatalf("expected right branch in prompt context, got: %s", out)
+	}
+	if strings.Contains(out, "assistant: left-a") {
+		t.Fatalf("did not expect left branch in prompt context: %s", out)
+	}
+	if gotLeaf, _ := resp.Payload["leaf_id"].(string); gotLeaf != rightLeaf {
+		t.Fatalf("expected prompt payload leaf_id=%q got %q", rightLeaf, gotLeaf)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestGetMessagesUsesActiveLeafWhenLeafOmitted(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := mgr.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	_, rightLeaf := seedLeafMessageTree(t, mgr, sessionID)
+	srv.SetSessionManager(mgr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	if _, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gm-active-leaf",
+		Type:    string(protocol.CmdSetLeaf),
+		Payload: map[string]any{"leaf_id": rightLeaf},
+	}); err != nil {
+		t.Fatalf("set_leaf failed: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gm-read-active-leaf",
+		Type:    string(protocol.CmdGetMessages),
+		Payload: map[string]any{},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("get_messages failed: resp=%+v err=%v", resp, err)
+	}
+	if gotSID, _ := resp.Payload["session_id"].(string); gotSID != sessionID {
+		t.Fatalf("unexpected session_id: got=%q want=%q payload=%+v", gotSID, sessionID, resp.Payload)
+	}
+	if gotLeaf, _ := resp.Payload["leaf_id"].(string); gotLeaf != rightLeaf {
+		t.Fatalf("unexpected effective leaf_id: got=%q want=%q payload=%+v", gotLeaf, rightLeaf, resp.Payload)
+	}
+	rawMessages, ok := resp.Payload["messages"].([]any)
+	if !ok || len(rawMessages) != 4 {
+		t.Fatalf("expected right branch path of 4 messages, got %+v", resp.Payload["messages"])
+	}
+	last, ok := rawMessages[len(rawMessages)-1].(map[string]any)
+	if !ok || last["id"] != rightLeaf {
+		t.Fatalf("unexpected last path entry: %+v", last)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestGetTreeReturnsMessageGraphMetadata(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	_, err = mgr.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	_, rightLeaf := seedLeafMessageTree(t, mgr, mgr.ActiveSession())
+	if err := mgr.SetActiveLeaf(mgr.ActiveSession(), rightLeaf); err != nil {
+		t.Fatalf("set active leaf failed: %v", err)
+	}
+	srv.SetSessionManager(mgr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "tree-read",
+		Type:    string(protocol.CmdGetTree),
+		Payload: map[string]any{},
+	})
+	if err != nil || !resp.OK || resp.Type != "tree" {
+		t.Fatalf("get_tree failed: resp=%+v err=%v", resp, err)
+	}
+	if gotLeaf, _ := resp.Payload["leaf_id"].(string); gotLeaf != rightLeaf {
+		t.Fatalf("unexpected active leaf in tree payload: got=%q want=%q", gotLeaf, rightLeaf)
+	}
+	rawNodes, ok := resp.Payload["nodes"].([]any)
+	if !ok || len(rawNodes) < 6 {
+		t.Fatalf("expected at least 6 tree nodes, got %+v", resp.Payload["nodes"])
+	}
+	firstNode, ok := rawNodes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected node shape: %+v", rawNodes[0])
+	}
+	if firstNode["id"] == "" || firstNode["role"] == "" {
+		t.Fatalf("tree node missing id/role fields: %+v", firstNode)
+	}
+	if _, ok := firstNode["snippet"].(string); !ok {
+		t.Fatalf("tree node missing snippet field: %+v", firstNode)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestAsyncPromptWithLeafPersistsParentLinkage(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")

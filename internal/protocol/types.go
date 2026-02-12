@@ -23,6 +23,8 @@ const (
 	CmdGetState        CommandType = "get_state"
 	CmdGetMessages     CommandType = "get_messages"
 	CmdCompactSession  CommandType = "compact_session"
+	CmdSetLeaf         CommandType = "set_leaf"
+	CmdGetTree         CommandType = "get_tree"
 	CmdNewSession      CommandType = "new_session"
 	CmdSwitchSession   CommandType = "switch_session"
 	CmdBranchSession   CommandType = "branch_session"
@@ -78,6 +80,8 @@ var validCommands = map[CommandType]struct{}{
 	CmdGetState:        {},
 	CmdGetMessages:     {},
 	CmdCompactSession:  {},
+	CmdSetLeaf:         {},
+	CmdGetTree:         {},
 	CmdNewSession:      {},
 	CmdSwitchSession:   {},
 	CmdBranchSession:   {},

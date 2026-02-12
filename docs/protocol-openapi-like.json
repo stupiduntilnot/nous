@@ -21,6 +21,8 @@
     "get_state": [],
     "get_messages": [],
     "compact_session": [],
+    "set_leaf": ["leaf_id"],
+    "get_tree": [],
     "new_session": [],
     "switch_session": ["session_id"],
     "branch_session": ["session_id"],
@@ -31,7 +33,10 @@
     "steer": [],
     "follow_up": [],
     "abort": [],
-    "compact_session": ["session_id", "instruction"]
+    "compact_session": ["session_id", "instruction"],
+    "set_leaf": ["session_id"],
+    "get_tree": ["session_id"],
+    "get_messages": ["leaf_id"]
   },
   "x-runtime-semantics": {
     "prompt": {
@@ -63,6 +68,8 @@
     "accepted:set_follow_up_mode": ["command", "mode"],
     "state": ["run_state", "run_id", "session_id", "steering_mode", "follow_up_mode", "pending_counts"],
     "messages": ["session_id", "messages"],
+    "leaf": ["session_id", "leaf_id"],
+    "tree": ["session_id", "nodes"],
     "compaction": ["session_id", "summary", "first_kept_entry_id", "tokens_before", "trigger"],
     "result": ["output", "events", "session_id"],
     "session": ["session_id", "active"],
@@ -146,6 +153,8 @@
                   "get_state",
                   "get_messages",
                   "compact_session",
+                  "set_leaf",
+                  "get_tree",
                   "new_session",
                   "switch_session",
                   "branch_session",

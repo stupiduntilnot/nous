@@ -38,6 +38,8 @@ Milestone 1 完成条件：
 - `get_state`
 - `get_messages`
 - `compact_session`
+- `set_leaf`
+- `get_tree`
 - `new_session`
 - `switch_session`
 - `branch_session`

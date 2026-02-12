@@ -366,6 +366,90 @@ func TestBuildMessageContextFromLeaf(t *testing.T) {
 	}
 }
 
+func TestSetActiveLeafAndBuildMessageContextFromActiveLeaf(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID := "sess-active-leaf"
+	path := filepath.Join(dir, sessionID+".jsonl")
+	lines := []string{
+		`{"type":"session_meta","id":"sess-active-leaf","schema_version":3}`,
+		`{"type":"message","id":"a","role":"user","text":"root","created_at":"2026-01-01T00:00:00Z"}`,
+		`{"type":"message","id":"b","parent_id":"a","role":"assistant","text":"left","created_at":"2026-01-01T00:00:01Z"}`,
+		`{"type":"message","id":"c","parent_id":"a","role":"assistant","text":"right","created_at":"2026-01-01T00:00:02Z"}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write session failed: %v", err)
+	}
+
+	if err := m.SetActiveLeaf(sessionID, "c"); err != nil {
+		t.Fatalf("set active leaf failed: %v", err)
+	}
+	leafID, err := m.ActiveLeaf(sessionID)
+	if err != nil {
+		t.Fatalf("active leaf failed: %v", err)
+	}
+	if leafID != "c" {
+		t.Fatalf("unexpected active leaf: got=%q want=%q", leafID, "c")
+	}
+
+	msgs, err := m.BuildMessageContextFromActiveLeaf(sessionID)
+	if err != nil {
+		t.Fatalf("build message context from active leaf failed: %v", err)
+	}
+	if len(msgs) != 2 || msgs[0].ID != "a" || msgs[1].ID != "c" {
+		t.Fatalf("unexpected active leaf path context: %+v", msgs)
+	}
+}
+
+func TestSetActiveLeafRejectsUnknownLeaf(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	if err := m.AppendMessageTo(sessionID, NewMessageEntry("user", "hello", "run-1", "prompt")); err != nil {
+		t.Fatalf("append message failed: %v", err)
+	}
+	if err := m.SetActiveLeaf(sessionID, "missing"); err == nil {
+		t.Fatalf("expected set active leaf with unknown id to fail")
+	}
+}
+
+func TestAppendMessageToResolvedTracksLeafTip(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	first, err := m.AppendMessageToResolved(sessionID, NewMessageEntry("user", "one", "run-1", "prompt"))
+	if err != nil {
+		t.Fatalf("append first failed: %v", err)
+	}
+	second, err := m.AppendMessageToResolved(sessionID, NewMessageEntry("assistant", "two", "run-1", "prompt"))
+	if err != nil {
+		t.Fatalf("append second failed: %v", err)
+	}
+	if second.ParentID != first.ID {
+		t.Fatalf("unexpected parent linkage: first=%+v second=%+v", first, second)
+	}
+	leafID, err := m.ActiveLeaf(sessionID)
+	if err != nil {
+		t.Fatalf("active leaf failed: %v", err)
+	}
+	if leafID != second.ID {
+		t.Fatalf("unexpected tracked active leaf: got=%q want=%q", leafID, second.ID)
+	}
+}
+
 func TestBuildMessageContextAppliesCompactionMarker(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewManager(dir)

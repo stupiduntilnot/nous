@@ -519,8 +519,15 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			entries []session.MessageEntry
 			err     error
 		)
-		if leafID != "" {
-			entries, err = s.sessions.BuildMessageContextFromLeaf(sessionID, leafID)
+		resolvedLeafID, err := s.resolveLeafID(sessionID, leafID)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			return responseErr(env.ID, "session_error", err.Error())
+		}
+		if resolvedLeafID != "" {
+			entries, err = s.sessions.BuildMessageContextFromLeaf(sessionID, resolvedLeafID)
 		} else {
 			entries, err = s.sessions.BuildMessageContext(sessionID)
 		}
@@ -534,13 +541,92 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			"session_id": sessionID,
 			"messages":   entries,
 		}
-		if leafID != "" {
-			payload["leaf_id"] = leafID
+		if resolvedLeafID != "" {
+			payload["leaf_id"] = resolvedLeafID
 		}
 		return responseOK(protocol.Envelope{
 			V:       protocol.Version,
 			ID:      env.ID,
 			Type:    "messages",
+			Payload: payload,
+		})
+	case protocol.CmdSetLeaf:
+		if s.sessions == nil {
+			return responseErr(env.ID, "session_error", "session_manager_not_ready")
+		}
+		sessionID, _ := env.Payload["session_id"].(string)
+		if sessionID == "" {
+			sessionID = s.sessions.ActiveSession()
+		}
+		if sessionID == "" {
+			return responseErr(env.ID, "invalid_payload", "session_id is required")
+		}
+		leafID, _ := env.Payload["leaf_id"].(string)
+		leafID = strings.TrimSpace(leafID)
+		if leafID == "" {
+			return responseErr(env.ID, "invalid_payload", "leaf_id is required")
+		}
+		if err := s.sessions.SetActiveLeaf(sessionID, leafID); err != nil {
+			if os.IsNotExist(err) {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			if strings.Contains(err.Error(), "leaf_not_found") {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			return responseErr(env.ID, "session_error", err.Error())
+		}
+		return responseOK(protocol.Envelope{
+			V:    protocol.Version,
+			ID:   env.ID,
+			Type: "leaf",
+			Payload: map[string]any{
+				"session_id": sessionID,
+				"leaf_id":    leafID,
+			},
+		})
+	case protocol.CmdGetTree:
+		if s.sessions == nil {
+			return responseErr(env.ID, "session_error", "session_manager_not_ready")
+		}
+		sessionID, _ := env.Payload["session_id"].(string)
+		if sessionID == "" {
+			sessionID = s.sessions.ActiveSession()
+		}
+		if sessionID == "" {
+			return responseOK(protocol.Envelope{
+				V:       protocol.Version,
+				ID:      env.ID,
+				Type:    "tree",
+				Payload: map[string]any{"session_id": "", "nodes": []map[string]any{}},
+			})
+		}
+		entries, err := s.sessions.BuildMessageTree(sessionID)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			return responseErr(env.ID, "session_error", err.Error())
+		}
+		nodes := make([]map[string]any, 0, len(entries))
+		for _, rec := range entries {
+			nodes = append(nodes, map[string]any{
+				"id":        rec.ID,
+				"parent_id": rec.ParentID,
+				"role":      rec.Role,
+				"snippet":   snippet(rec.Text, 80),
+			})
+		}
+		payload := map[string]any{
+			"session_id": sessionID,
+			"nodes":      nodes,
+		}
+		if activeLeaf, err := s.sessions.ActiveLeaf(sessionID); err == nil && activeLeaf != "" {
+			payload["leaf_id"] = activeLeaf
+		}
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "tree",
 			Payload: payload,
 		})
 	case protocol.CmdCompactSession:
@@ -617,7 +703,11 @@ func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelop
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
-	promptWithContext, err := s.promptWithSessionContext(sessionID, text, leafID)
+	resolvedLeafID, err := s.resolveLeafID(sessionID, leafID)
+	if err != nil {
+		return responseErrWithCause(reqID, "session_error", "failed to resolve session leaf", err)
+	}
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text, resolvedLeafID)
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
 	}
@@ -633,7 +723,7 @@ func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelop
 	if err != nil {
 		if isContextOverflowError(err) {
 			if _, _, compactErr := s.compactSession(sessionID, "", "overflow"); compactErr == nil {
-				retryPrompt, ctxErr := s.promptWithSessionContext(sessionID, text, leafID)
+				retryPrompt, ctxErr := s.promptWithSessionContext(sessionID, text, resolvedLeafID)
 				if ctxErr != nil {
 					return responseErrWithCause(reqID, "session_error", "failed to build session context", ctxErr)
 				}
@@ -644,7 +734,7 @@ func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelop
 			return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
 		}
 	}
-	if _, err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out, leafID); err != nil {
+	if _, err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out, resolvedLeafID); err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to persist session records", err)
 	}
 	_, _, _ = s.compactSessionIfThreshold(sessionID)
@@ -653,8 +743,8 @@ func (s *Server) promptSync(reqID, text, leafID string) protocol.ResponseEnvelop
 		"events":     events,
 		"session_id": sessionID,
 	}
-	if leafID != "" {
-		payload["leaf_id"] = leafID
+	if resolvedLeafID != "" {
+		payload["leaf_id"] = resolvedLeafID
 	}
 	return responseOK(protocol.Envelope{
 		V:       protocol.Version,
@@ -669,7 +759,11 @@ func (s *Server) promptAsync(reqID, text, leafID string) protocol.ResponseEnvelo
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
-	promptWithContext, err := s.promptWithSessionContext(sessionID, text, leafID)
+	resolvedLeafID, err := s.resolveLeafID(sessionID, leafID)
+	if err != nil {
+		return responseErrWithCause(reqID, "session_error", "failed to resolve session leaf", err)
+	}
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text, resolvedLeafID)
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
 	}
@@ -678,14 +772,14 @@ func (s *Server) promptAsync(reqID, text, leafID string) protocol.ResponseEnvelo
 	if err != nil {
 		return responseErr(reqID, "command_rejected", err.Error())
 	}
-	s.setActiveRunContext(runID, sessionID, leafID)
+	s.setActiveRunContext(runID, sessionID, resolvedLeafID)
 	payload := map[string]any{
 		"command":    "prompt",
 		"run_id":     runID,
 		"session_id": sessionID,
 	}
-	if leafID != "" {
-		payload["leaf_id"] = leafID
+	if resolvedLeafID != "" {
+		payload["leaf_id"] = resolvedLeafID
 	}
 	return responseOK(protocol.Envelope{
 		V:       protocol.Version,
@@ -727,6 +821,7 @@ func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output, parentI
 	if err != nil {
 		return "", err
 	}
+	_ = s.sessions.SetActiveLeaf(sessionID, assistant.ID)
 	return assistant.ID, nil
 }
 
@@ -744,6 +839,24 @@ func (s *Server) promptWithSessionContext(sessionID, prompt, leafID string) (str
 		return "", err
 	}
 	return session.BuildPromptContext(records, prompt, 20), nil
+}
+
+func (s *Server) resolveLeafID(sessionID, explicitLeafID string) (string, error) {
+	explicitLeafID = strings.TrimSpace(explicitLeafID)
+	if explicitLeafID != "" {
+		return explicitLeafID, nil
+	}
+	if s.sessions == nil || strings.TrimSpace(sessionID) == "" {
+		return "", nil
+	}
+	leafID, err := s.sessions.ActiveLeaf(sessionID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", err
+		}
+		return "", nil
+	}
+	return strings.TrimSpace(leafID), nil
 }
 
 func responseOK(env protocol.Envelope) protocol.ResponseEnvelope {
@@ -1064,6 +1177,14 @@ func (s *Server) clearOverflowRetry(runID string) {
 	s.compactionMu.Lock()
 	defer s.compactionMu.Unlock()
 	delete(s.retriedOverflow, runID)
+}
+
+func snippet(text string, max int) string {
+	value := strings.TrimSpace(text)
+	if max <= 0 || len(value) <= max {
+		return value
+	}
+	return strings.TrimSpace(value[:max]) + "..."
 }
 
 func isContextOverflowError(err error) bool {
