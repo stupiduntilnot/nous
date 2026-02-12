@@ -20,6 +20,8 @@ func normalizeToolArguments(toolName string, args map[string]any) (map[string]an
 		return normalizeWriteArgs(args)
 	case "edit":
 		return normalizeEditArgs(args)
+	case "bash":
+		return normalizeBashArgs(args)
 	default:
 		return args, nil
 	}
@@ -154,6 +156,23 @@ func normalizeEditArgs(args map[string]any) (map[string]any, error) {
 		"oldText": oldText,
 		"newText": newText,
 	}, nil
+}
+
+func normalizeBashArgs(args map[string]any) (map[string]any, error) {
+	command := resolveStringArg(args, "command", "cmd")
+	if command == "" {
+		return nil, fmt.Errorf("validation_failed: bash.command is required")
+	}
+	out := map[string]any{"command": command}
+	if n, ok, err := resolveIntArg(args, []string{"timeout", "timeout_seconds", "timeoutSeconds"}); err != nil {
+		return nil, fmt.Errorf("validation_failed: bash.timeout must be a number")
+	} else if ok {
+		if n < 0 {
+			return nil, fmt.Errorf("validation_failed: bash.timeout must be >= 0")
+		}
+		out["timeout"] = n
+	}
+	return out, nil
 }
 
 func resolveRequiredStringField(args map[string]any, keys ...string) (string, bool) {

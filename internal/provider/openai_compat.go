@@ -286,6 +286,23 @@ func buildOpenAITools(names []string) []map[string]any {
 				"required":             []string{"path", "oldText", "newText"},
 				"additionalProperties": true,
 			}
+		case "bash":
+			description = "Execute a shell command in current working directory."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "Shell command to execute.",
+					},
+					"timeout": map[string]any{
+						"type":        "number",
+						"description": "Optional timeout in seconds.",
+					},
+				},
+				"required":             []string{"command"},
+				"additionalProperties": true,
+			}
 		}
 		tools = append(tools, map[string]any{
 			"type": "function",

@@ -142,3 +142,25 @@ func TestNormalizeEditArgsRequiresFields(t *testing.T) {
 		t.Fatalf("unexpected error for missing newText: %v", err)
 	}
 }
+
+func TestNormalizeBashArgsAcceptsAliases(t *testing.T) {
+	got, err := normalizeToolArguments("bash", map[string]any{
+		"cmd":            "printf OK",
+		"timeoutSeconds": "3",
+	})
+	if err != nil {
+		t.Fatalf("normalize bash args failed: %v", err)
+	}
+	if c, _ := got["command"].(string); c != "printf OK" {
+		t.Fatalf("unexpected command: %#v", got["command"])
+	}
+	if timeout, _ := got["timeout"].(int); timeout != 3 {
+		t.Fatalf("unexpected timeout: %#v", got["timeout"])
+	}
+}
+
+func TestNormalizeBashArgsRequiresCommand(t *testing.T) {
+	if _, err := normalizeToolArguments("bash", map[string]any{}); err == nil || err.Error() != "validation_failed: bash.command is required" {
+		t.Fatalf("unexpected error for missing bash command: %v", err)
+	}
+}

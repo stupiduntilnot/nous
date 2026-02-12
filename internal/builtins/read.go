@@ -106,6 +106,7 @@ func normalizeReadPathValue(v any) string {
 func DefaultTools(cwd string) []core.Tool {
 	return []core.Tool{
 		NewReadTool(cwd),
+		NewBashTool(cwd),
 		NewEditTool(cwd),
 		NewWriteTool(cwd),
 		NewGrepTool(cwd),
