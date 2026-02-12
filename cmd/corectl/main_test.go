@@ -14,6 +14,7 @@ func TestParseArgs(t *testing.T) {
 	}{
 		{args: []string{"ping"}, wantCmd: "ping"},
 		{args: []string{"prompt", "hello"}, wantCmd: "prompt"},
+		{args: []string{"prompt_async", "hello"}, wantCmd: "prompt"},
 		{args: []string{"steer", "focus"}, wantCmd: "steer"},
 		{args: []string{"follow_up", "next"}, wantCmd: "follow_up"},
 		{args: []string{"abort"}, wantCmd: "abort"},
@@ -30,6 +31,7 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"ext", "hello"}, wantCmd: "extension_command"},
 		{args: []string{"ext", "hello", "{\"x\":1}"}, wantCmd: "extension_command"},
 		{args: []string{"prompt"}, wantErr: true},
+		{args: []string{"prompt_async"}, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -43,6 +45,20 @@ func TestParseArgs(t *testing.T) {
 		if cmd != tc.wantCmd {
 			t.Fatalf("unexpected cmd for args=%v: got=%q want=%q", tc.args, cmd, tc.wantCmd)
 		}
+	}
+}
+
+func TestParseArgsPromptAsyncSetsWaitFalse(t *testing.T) {
+	_, payload, err := parseArgs([]string{"prompt_async", "hello", "world"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, _ := payload["text"].(string); got != "hello world" {
+		t.Fatalf("unexpected prompt_async text payload: %+v", payload)
+	}
+	wait, ok := payload["wait"].(bool)
+	if !ok || wait {
+		t.Fatalf("prompt_async should set wait=false payload: %+v", payload)
 	}
 }
 

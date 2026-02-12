@@ -2,114 +2,137 @@
 
 ## 1. Goal
 
-Milestone 4 goal: harden core runtime operability and developer safety while keeping NDJSON protocol `v=1` stable for external product-TUI work.
+Milestone 4 goal: harden core runtime operability while keeping NDJSON protocol `v=1` stable for the separate product-TUI implementation.
 
-Milestone 4 focus is core/runtime quality, not TUI UX redesign.
+Scope focus:
+1. Core/runtime behavior and tooling.
+2. Protocol-compatible additions only (no breaking wire changes).
+3. Existing in-repo TUI remains dev MVP.
 
-## 2. Inputs
+## 2. Atomic Steps
 
-1. Stable protocol contract: `docs/tui-protocol-v1-contract.md`, `docs/protocol-openapi-like.json`, `internal/protocol/types.go`.
-2. Milestone 3 baseline: `docs/plan-milestone3.md`, `docs/dev-milestone3.md`, `scripts/phase-gate-m3.sh`.
-3. Core packages: `internal/core`, `internal/ipc`, `internal/session`, `internal/extension`, `internal/provider`.
+### Step M4-1: Stream-first operational hardening
 
-## 3. Priorities
+Implement:
+1. Add a stream-first CLI path (`corectl prompt_async`) that sends `prompt` with `wait:false`.
+2. Keep existing sync prompt behavior as compatibility path.
+3. Update usage/help text to make async flow explicit.
 
-### P0: Runtime Contract Hardening
+Implement for test:
+1. `cmd/corectl/main_test.go`:
+`prompt_async` parsing and payload assertions.
+2. `internal/ipc/client_test.go`:
+stream-first prompt acceptance/run-id behavior remains green.
 
-#### M4-A1 Stream-first default, sync prompt as compatibility shim
+Verified:
+1. `go test ./cmd/corectl -run 'ParseArgs'`
+2. `go test ./internal/ipc -run 'PromptCommandWithWaitFalse|PromptWaitFalseStreamsEventsOverEventSocket'`
+3. `go test ./...`
 
-Problem:
-1. Sync `prompt(wait:true)` still exists and can be misused as primary interaction path.
+Commit:
+1. `m4-1 cli: add explicit stream-first prompt_async path`
 
-Deliver:
-1. Keep sync path backward compatible.
-2. Make stream-first semantics explicit in code/docs/tests.
-3. Add guardrails so new features do not depend on sync result payload.
+### Step M4-2: Event trace export and deterministic replay
 
-Exit criteria:
-1. IPC tests assert async (`wait:false`) path is canonical.
-2. No new runtime behavior is only exposed via sync response body.
+Implement:
+1. Add IPC client utilities to capture run-scoped events from event socket.
+2. Add NDJSON trace read/write helpers.
+3. Add deterministic replay validator for trace ordering.
+4. Add `corectl trace <run_id>` command to export trace NDJSON.
+5. Document trace workflow in `docs/runtime-trace.md`.
 
-#### M4-A2 Event trace export + deterministic replay
+Implement for test:
+1. `internal/ipc/trace_test.go`:
+trace capture + NDJSON roundtrip + replay validation.
+2. `cmd/corectl/main_test.go`:
+`trace` arg parsing coverage.
 
-Problem:
-1. Debugging parity/runtime issues is slower without first-class run traces.
+Verified:
+1. `go test ./internal/ipc -run 'Trace|Replay'`
+2. `go test ./cmd/corectl -run 'ParseArgs'`
+3. `go test ./...`
 
-Deliver:
-1. Add trace export utility for run-scoped events (NDJSON artifact).
-2. Add deterministic replay test harness from captured trace.
-3. Document trace format and replay workflow.
+Commit:
+1. `m4-2 ipc/corectl: add run trace export and replay utilities`
 
-Exit criteria:
-1. At least one end-to-end replay test passes from exported fixture.
-2. Debug workflow can reproduce run ordering issues from artifact only.
+### Step M4-3: Leaf-aware prompt execution
 
-### P1: Session and Extension Robustness
+Implement:
+1. Add optional `leaf_id` on `prompt` payload.
+2. Build prompt context from `BuildMessageContextFromLeaf` when `leaf_id` provided.
+3. Persist new user/assistant entries with correct parent linkage from selected leaf.
+4. Preserve existing behavior when `leaf_id` absent.
 
-#### M4-B1 Leaf-aware prompt execution API
+Implement for test:
+1. `internal/ipc/client_test.go`:
+leaf-aware prompt context and parent-link persistence.
+2. `internal/session/manager_test.go`:
+resolved append helper and parent linkage checks.
+3. Protocol docs/examples update for `prompt.leaf_id` optional field.
 
-Problem:
-1. Session tree exists, but prompt execution from explicit leaf context is not yet first-class in IPC.
+Verified:
+1. `go test ./internal/ipc -run 'Leaf|Prompt|Session|Context'`
+2. `go test ./internal/session -run 'Append|Leaf|Context'`
+3. `go test ./internal/protocol -run 'Spec|Examples|Requirements'`
+4. `go test ./...`
 
-Deliver:
-1. Add IPC/API support to execute prompt with explicit `leaf_id` context selection.
-2. Persist resulting messages with correct parent linkage.
-3. Keep default behavior unchanged when `leaf_id` is not provided.
+Commit:
+1. `m4-3 ipc/session: add leaf-aware prompt context and persistence`
 
-Exit criteria:
-1. IPC tests prove prompt-from-leaf reconstructs correct path context.
-2. Session tests prove deterministic parent/leaf linkage after branching.
+### Step M4-4: Extension timeout isolation policy
 
-#### M4-B2 Extension isolation with timeout/resource policy
+Implement:
+1. Add configurable extension hook/tool timeouts in `extension.Manager`.
+2. Add core flags to configure extension timeout values.
+3. Isolate extension timeout failures in engine as warnings/tool_error output instead of run-stopping errors where safe.
 
-Problem:
-1. Extension hooks/tools can still degrade run stability if they block too long.
+Implement for test:
+1. `internal/extension/manager_test.go`:
+timeout behavior for hook/tool execution.
+2. `internal/core/engine_extension_test.go`:
+timeout isolation warnings and non-fatal tool timeout behavior.
+3. `cmd/core/main_test.go` (or equivalent):
+timeout flag parsing/validation.
 
-Deliver:
-1. Add configurable timeout policy for extension hook/tool execution.
-2. Convert timeout/failure to isolated warning/error envelopes without corrupting runtime state.
-3. Add observability fields for timeout/rejection reasons.
+Verified:
+1. `go test ./internal/extension -run 'Timeout|Hook|Tool'`
+2. `go test ./internal/core -run 'Extension|Timeout|Hook|Tool'`
+3. `go test ./cmd/core -run 'Flag|Timeout'`
+4. `go test ./...`
 
-Exit criteria:
-1. Timeout tests cover hook and extension tool paths.
-2. Runtime remains responsive and state-consistent under extension delays.
+Commit:
+1. `m4-4 core/extension: add timeout policy and isolation semantics`
 
-### P1: Build/CI Reliability
+### Step M4-5: Milestone 4 gate
 
-#### M4-C1 Gate split and smoke policy
+Implement:
+1. Add `scripts/phase-gate-m4.sh` and `make milestone4-gate`.
+2. Gate deterministic tests for M4-1..M4-4.
+3. Add optional live smoke stage controlled by env (`M4_GATE_LIVE_SMOKE=1`).
 
-Problem:
-1. Local and CI flows need clearer separation between deterministic tests and live-provider checks.
+Implement for test:
+1. Gate script self-validation in local runs.
+2. `Makefile` target wiring.
 
-Deliver:
-1. Add milestone 4 gate script with deterministic core checks.
-2. Keep live OpenAI smoke as optional-but-supported stage via explicit env toggle.
-3. Ensure protocol freeze checks are enforced in gate.
+Verified:
+1. `./scripts/phase-gate-m4.sh`
+2. `make milestone4-gate`
+3. `M4_GATE_LIVE_SMOKE=1 ./scripts/phase-gate-m4.sh` when `OPENAI_API_KEY` is set.
+4. `go test ./...`
 
-Exit criteria:
-1. `make milestone4-gate` passes without network when smoke toggle is off.
-2. Live smoke stage can be enabled in CI/local with one env flag.
+Commit:
+1. `m4-5 build: add milestone4 gate with optional live smoke`
 
-## 4. Execution Order
-
-1. M4-A1 stream-first hardening.
-2. M4-A2 trace export/replay.
-3. M4-B1 leaf-aware prompt API.
-4. M4-B2 extension timeout/resource isolation.
-5. M4-C1 gate split + smoke policy.
-
-## 5. Non-goals
+## 3. Non-goals
 
 1. Product-level TUI framework migration.
-2. Visual UX redesign in `cmd/tui`.
-3. New provider families beyond current adapters.
+2. UX redesign in `cmd/tui`.
+3. Breaking protocol changes to existing `v=1` command/event surface.
 
-## 6. Completion Criteria
+## 4. Done Criteria
 
-Milestone 4 is complete when:
-1. Protocol `v=1` compatibility remains intact for external TUI.
-2. Stream-first runtime path is clearly canonical and protected by tests.
-3. Trace export/replay is usable for debugging regressions.
-4. Leaf-aware prompt API is supported and tested.
-5. Extension timeout isolation is implemented and verified.
-6. Milestone 4 gate is green, with deterministic and optional live-smoke stages.
+Milestone 4 is done when:
+1. Steps `M4-1` through `M4-5` are implemented and committed.
+2. `go test ./...` is green.
+3. `make milestone4-gate` is green.
+4. Live smoke path is executable when credentials are present.
