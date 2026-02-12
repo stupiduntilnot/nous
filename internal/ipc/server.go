@@ -51,7 +51,7 @@ func NewServer(socketPath string) *Server {
 	return &Server{
 		socketPath:      socketPath,
 		eventSocketPath: socketPath + ".events",
-		timeout:         3 * time.Second,
+		timeout:         30 * time.Second,
 		logWriter:       os.Stderr,
 		subscribers:     make(map[uint64]chan protocol.Envelope),
 	}

@@ -21,7 +21,7 @@ func main() {
 	providerName := flag.String("provider", "mock", "provider: mock|openai|gemini")
 	model := flag.String("model", "", "provider model name")
 	apiBase := flag.String("api-base", "", "optional provider API base URL")
-	commandTimeout := flag.Duration("command-timeout", 3*time.Second, "ipc command timeout (e.g. 3s, 500ms)")
+	commandTimeout := flag.Duration("command-timeout", 30*time.Second, "ipc command timeout (e.g. 30s, 500ms)")
 	enableDemoExt := flag.Bool("enable-demo-extension", false, "register built-in demo extension command/tool")
 	extensionHookTimeout := flag.Duration("extension-hook-timeout", 0, "extension hook timeout (0 disables)")
 	extensionToolTimeout := flag.Duration("extension-tool-timeout", 0, "extension tool timeout (0 disables)")
