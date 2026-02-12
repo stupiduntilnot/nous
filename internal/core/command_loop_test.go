@@ -251,6 +251,38 @@ func TestCommandLoopRejectsInvalidQueueMode(t *testing.T) {
 	}
 }
 
+func TestPromptWithExecutionTextUsesExecutionPayloadButPersistsInput(t *testing.T) {
+	exec := newGatedExecutor()
+	loop := NewCommandLoop(exec)
+
+	results := make(chan TurnResult, 1)
+	loop.SetOnTurnEnd(func(r TurnResult) { results <- r })
+
+	if _, err := loop.PromptWithExecutionText("raw-user-input", "contextualized-input"); err != nil {
+		t.Fatalf("prompt with execution text failed: %v", err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("turn did not start")
+	}
+	exec.release <- struct{}{}
+	waitLoopIdle(t, loop)
+
+	gotCalls := exec.Calls()
+	if !slices.Equal(gotCalls, []string{"contextualized-input"}) {
+		t.Fatalf("unexpected execution prompt payloads: %v", gotCalls)
+	}
+	select {
+	case r := <-results:
+		if r.Input != "raw-user-input" {
+			t.Fatalf("expected turn result input to keep raw text, got: %q", r.Input)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("did not receive turn result")
+	}
+}
+
 func TestCommandLoopAbortCancelsAndClearsQueue(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)

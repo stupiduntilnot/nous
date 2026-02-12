@@ -1359,6 +1359,88 @@ func TestAsyncPromptPersistsToOriginalSessionWhenSwitchingMidRun(t *testing.T) {
 	}
 }
 
+func TestAsyncPromptUsesSessionContextAndPersistsRawInput(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new session manager failed: %v", err)
+	}
+	srv.SetSessionManager(mgr)
+
+	e := core.NewEngine(core.NewRuntime(), &echoPromptAdapter{})
+	e.SetExtensionManager(extension.NewManager())
+	loop := core.NewCommandLoop(e)
+	srv.SetEngine(e, loop)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	newResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "ctx-new",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	})
+	if err != nil || !newResp.OK {
+		t.Fatalf("new session failed: resp=%+v err=%v", newResp, err)
+	}
+	sessionID, _ := newResp.Payload["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("missing session id: %+v", newResp.Payload)
+	}
+
+	syncResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "ctx-sync",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "first", "wait": true},
+	})
+	if err != nil || !syncResp.OK {
+		t.Fatalf("sync prompt failed: resp=%+v err=%v", syncResp, err)
+	}
+
+	asyncResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "ctx-async",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "second", "wait": false},
+	})
+	if err != nil || !asyncResp.OK {
+		t.Fatalf("async prompt failed: resp=%+v err=%v", asyncResp, err)
+	}
+
+	waitForLoopState(t, loop, core.StateIdle, 2*time.Second)
+
+	entries, err := mgr.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build session context failed: %v", err)
+	}
+	if len(entries) < 4 {
+		t.Fatalf("expected at least 4 message entries, got %d", len(entries))
+	}
+	lastUser := entries[len(entries)-2]
+	lastAssistant := entries[len(entries)-1]
+	if lastUser.Role != "user" || lastUser.Text != "second" {
+		t.Fatalf("expected async run to persist raw user input, got %+v", lastUser)
+	}
+	if lastAssistant.Role != "assistant" {
+		t.Fatalf("expected assistant entry at tail, got %+v", lastAssistant)
+	}
+	if !strings.Contains(lastAssistant.Text, "Conversation so far:") || !strings.Contains(lastAssistant.Text, "user: first") {
+		t.Fatalf("expected async execution to include prior session context, got: %q", lastAssistant.Text)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestSendCommandWithTimeoutDeadline(t *testing.T) {
 	socket := testSocketPath(t)
 	ln, err := net.Listen("unix", socket)

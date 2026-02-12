@@ -475,8 +475,12 @@ func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
 	if err != nil {
 		return responseErrWithCause(reqID, "session_error", "session operation failed", err)
 	}
+	promptWithContext, err := s.promptWithSessionContext(sessionID, text)
+	if err != nil {
+		return responseErrWithCause(reqID, "session_error", "failed to build session context", err)
+	}
 
-	runID, err := s.loop.Prompt(text)
+	runID, err := s.loop.PromptWithExecutionText(text, promptWithContext)
 	if err != nil {
 		return responseErr(reqID, "command_rejected", err.Error())
 	}

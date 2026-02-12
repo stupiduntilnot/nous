@@ -38,8 +38,9 @@ type TurnResult struct {
 }
 
 type queuedTurn struct {
-	kind TurnKind
-	text string
+	kind      TurnKind
+	inputText string
+	execText  string
 }
 
 type CommandLoop struct {
@@ -88,10 +89,21 @@ func (l *CommandLoop) CurrentRunID() string {
 }
 
 func (l *CommandLoop) Prompt(text string) (string, error) {
-	if text == "" {
+	return l.PromptWithExecutionText(text, text)
+}
+
+func (l *CommandLoop) PromptWithExecutionText(inputText, executionText string) (string, error) {
+	if inputText == "" {
+		return "", fmt.Errorf("empty_prompt")
+	}
+	if executionText == "" {
 		return "", fmt.Errorf("empty_prompt")
 	}
 
+	return l.enqueuePrompt(inputText, executionText)
+}
+
+func (l *CommandLoop) enqueuePrompt(inputText, executionText string) (string, error) {
 	l.mu.Lock()
 	if l.state != StateIdle {
 		l.mu.Unlock()
@@ -102,7 +114,7 @@ func (l *CommandLoop) Prompt(text string) (string, error) {
 	l.runID = fmt.Sprintf("run-%d", l.runCounter)
 	runID := l.runID
 	l.state = StateRunning
-	initial := queuedTurn{kind: TurnPrompt, text: text}
+	initial := queuedTurn{kind: TurnPrompt, inputText: inputText, execText: executionText}
 	l.mu.Unlock()
 
 	go l.process(initial)
@@ -119,7 +131,7 @@ func (l *CommandLoop) Steer(text string) error {
 	if l.state != StateRunning {
 		return fmt.Errorf("no_active_run")
 	}
-	l.steers = append(l.steers, queuedTurn{kind: TurnSteer, text: text})
+	l.steers = append(l.steers, queuedTurn{kind: TurnSteer, inputText: text, execText: text})
 	return nil
 }
 
@@ -133,7 +145,7 @@ func (l *CommandLoop) FollowUp(text string) error {
 	if l.state != StateRunning {
 		return fmt.Errorf("no_active_run")
 	}
-	l.followUps = append(l.followUps, queuedTurn{kind: TurnFollowUp, text: text})
+	l.followUps = append(l.followUps, queuedTurn{kind: TurnFollowUp, inputText: text, execText: text})
 	return nil
 }
 
@@ -203,7 +215,7 @@ func (l *CommandLoop) process(next queuedTurn) {
 				onTurnEnd(TurnResult{
 					RunID: runID,
 					Kind:  next.kind,
-					Input: next.text,
+					Input: next.inputText,
 					Err:   err,
 				})
 			}
@@ -231,13 +243,13 @@ func (l *CommandLoop) process(next queuedTurn) {
 		l.currentCancel = cancel
 		l.mu.Unlock()
 
-		out, err := l.executor.Prompt(ctx, runID, next.text)
+		out, err := l.executor.Prompt(ctx, runID, next.execText)
 		cancel()
 
 		result := TurnResult{
 			RunID:  runID,
 			Kind:   next.kind,
-			Input:  next.text,
+			Input:  next.inputText,
 			Output: out,
 			Err:    err,
 		}
@@ -287,23 +299,26 @@ func (l *CommandLoop) dequeueFollowUpLocked() queuedTurn {
 func dequeueQueueLocked(queue *[]queuedTurn, kind TurnKind, mode QueueMode) queuedTurn {
 	items := *queue
 	if len(items) == 0 {
-		return queuedTurn{kind: kind}
+		return queuedTurn{kind: kind, inputText: "", execText: ""}
 	}
 	if mode != QueueModeAll || len(items) == 1 {
 		next := items[0]
 		*queue = items[1:]
 		return next
 	}
-	texts := make([]string, 0, len(items))
+	inputs := make([]string, 0, len(items))
+	executions := make([]string, 0, len(items))
 	for _, item := range items {
-		if strings.TrimSpace(item.text) == "" {
+		if strings.TrimSpace(item.inputText) == "" || strings.TrimSpace(item.execText) == "" {
 			continue
 		}
-		texts = append(texts, item.text)
+		inputs = append(inputs, item.inputText)
+		executions = append(executions, item.execText)
 	}
 	*queue = nil
 	return queuedTurn{
-		kind: kind,
-		text: strings.Join(texts, "\n"),
+		kind:      kind,
+		inputText: strings.Join(inputs, "\n"),
+		execText:  strings.Join(executions, "\n"),
 	}
 }
