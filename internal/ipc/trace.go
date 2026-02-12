@@ -29,7 +29,6 @@ func CaptureRunTrace(socketPath, runID string, timeout time.Duration) ([]protoco
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
-	started := false
 	events := make([]protocol.Envelope, 0, 64)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -49,10 +48,9 @@ func CaptureRunTrace(socketPath, runID string, timeout time.Duration) ([]protoco
 			continue
 		}
 		events = append(events, env)
-		if env.Type == string(protocol.EvAgentStart) {
-			started = true
-		}
-		if started && env.Type == string(protocol.EvAgentEnd) {
+		// A subscriber may attach after agent_start but before agent_end.
+		// For trace capture, agent_end is the only terminal signal required.
+		if env.Type == string(protocol.EvAgentEnd) {
 			return events, nil
 		}
 	}

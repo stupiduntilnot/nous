@@ -180,3 +180,96 @@ func TestCaptureRunTraceWithBurstMessageUpdates(t *testing.T) {
 		t.Fatalf("server returned error: %v", err)
 	}
 }
+
+type traceLateSubscriberProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p traceLateSubscriberProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 4)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		select {
+		case p.started <- struct{}{}:
+		default:
+		}
+		<-p.release
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "late-subscriber"}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func TestCaptureRunTraceReturnsWhenAgentEndSeenWithoutAgentStart(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	adapter := traceLateSubscriberProvider{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}, 1),
+	}
+	engine := core.NewEngine(core.NewRuntime(), adapter)
+	srv.SetEngine(engine, core.NewCommandLoop(engine))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+	if err := waitForSocket(socket+".events", 2*time.Second); err != nil {
+		t.Fatalf("event socket not ready: %v", err)
+	}
+
+	resp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "trace-late-sub",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "late subscriber", "wait": false},
+	})
+	if err != nil || !resp.OK {
+		t.Fatalf("prompt wait=false failed: resp=%+v err=%v", resp, err)
+	}
+
+	select {
+	case <-adapter.started:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("provider did not start in time")
+	}
+
+	traceCh := make(chan []protocol.Envelope, 1)
+	traceErrCh := make(chan error, 1)
+	go func() {
+		trace, err := CaptureRunTrace(socket, "run-1", 4*time.Second)
+		if err != nil {
+			traceErrCh <- err
+			return
+		}
+		traceCh <- trace
+	}()
+
+	adapter.release <- struct{}{}
+
+	var trace []protocol.Envelope
+	select {
+	case trace = <-traceCh:
+	case err := <-traceErrCh:
+		t.Fatalf("capture trace failed: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for trace capture")
+	}
+
+	if len(trace) == 0 {
+		t.Fatalf("expected non-empty trace")
+	}
+	if trace[len(trace)-1].Type != string(protocol.EvAgentEnd) {
+		t.Fatalf("expected terminal agent_end event, got %q", trace[len(trace)-1].Type)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
