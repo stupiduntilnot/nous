@@ -515,10 +515,10 @@ func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output string) 
 			return err
 		}
 	}
-	if err := s.sessions.AppendTo(sessionID, session.NewMessageEntry("user", input, runID, kind)); err != nil {
+	if err := s.sessions.AppendMessageTo(sessionID, session.NewMessageEntry("user", input, runID, kind)); err != nil {
 		return err
 	}
-	return s.sessions.AppendTo(sessionID, session.NewMessageEntry("assistant", output, runID, kind))
+	return s.sessions.AppendMessageTo(sessionID, session.NewMessageEntry("assistant", output, runID, kind))
 }
 
 func (s *Server) promptWithSessionContext(sessionID, prompt string) (string, error) {

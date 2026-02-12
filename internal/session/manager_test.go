@@ -259,4 +259,69 @@ func TestBuildMessageContextSupportsLegacySessionLines(t *testing.T) {
 	if msgs[0].Role != "user" || msgs[1].Role != "assistant" {
 		t.Fatalf("unexpected decoded message roles: %+v", msgs)
 	}
+	if msgs[0].ID == "" || msgs[1].ID == "" {
+		t.Fatalf("expected legacy lines to be normalized with ids: %+v", msgs)
+	}
+	if msgs[1].ParentID != msgs[0].ID {
+		t.Fatalf("expected parent linkage after normalization: %+v", msgs)
+	}
+}
+
+func TestAppendMessageToAssignsIDAndParent(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+
+	if err := m.AppendMessageTo(sessionID, NewMessageEntry("user", "hello", "run-1", "prompt")); err != nil {
+		t.Fatalf("append first message failed: %v", err)
+	}
+	if err := m.AppendMessageTo(sessionID, NewMessageEntry("assistant", "world", "run-1", "prompt")); err != nil {
+		t.Fatalf("append second message failed: %v", err)
+	}
+
+	msgs, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		t.Fatalf("build message context failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected two messages, got %d", len(msgs))
+	}
+	if msgs[0].ID == "" || msgs[1].ID == "" {
+		t.Fatalf("expected ids to be assigned: %+v", msgs)
+	}
+	if msgs[1].ParentID != msgs[0].ID {
+		t.Fatalf("expected second message parent_id to point to first: %+v", msgs)
+	}
+}
+
+func TestBuildMessageContextFromLeaf(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	sessionID := "sess-tree"
+	path := filepath.Join(dir, sessionID+".jsonl")
+	lines := []string{
+		`{"type":"session_meta","id":"sess-tree","schema_version":3}`,
+		`{"type":"message","id":"a","role":"user","text":"root","created_at":"2026-01-01T00:00:00Z"}`,
+		`{"type":"message","id":"b","parent_id":"a","role":"assistant","text":"left","created_at":"2026-01-01T00:00:01Z"}`,
+		`{"type":"message","id":"c","parent_id":"a","role":"assistant","text":"right","created_at":"2026-01-01T00:00:02Z"}`,
+	}
+	if err := os.WriteFile(path, []byte(lines[0]+"\n"+lines[1]+"\n"+lines[2]+"\n"+lines[3]+"\n"), 0o644); err != nil {
+		t.Fatalf("write session failed: %v", err)
+	}
+
+	msgs, err := m.BuildMessageContextFromLeaf(sessionID, "c")
+	if err != nil {
+		t.Fatalf("build message context from leaf failed: %v", err)
+	}
+	if len(msgs) != 2 || msgs[0].ID != "a" || msgs[1].ID != "c" {
+		t.Fatalf("unexpected leaf path context: %+v", msgs)
+	}
 }

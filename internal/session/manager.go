@@ -109,6 +109,45 @@ func (m *Manager) Append(record any) error {
 	return m.AppendTo(activeID, record)
 }
 
+func (m *Manager) AppendMessage(entry MessageEntry) error {
+	m.mu.Lock()
+	activeID := m.activeID
+	m.mu.Unlock()
+	if activeID == "" {
+		return fmt.Errorf("no_active_session")
+	}
+	return m.AppendMessageTo(activeID, entry)
+}
+
+func (m *Manager) AppendMessageTo(sessionID string, entry MessageEntry) error {
+	if sessionID == "" {
+		return fmt.Errorf("empty_session_id")
+	}
+	history, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		return err
+	}
+	if entry.Type == "" {
+		entry.Type = EntryTypeMessage
+	}
+	if entry.Type != EntryTypeMessage {
+		return fmt.Errorf("invalid_message_entry_type")
+	}
+	if strings.TrimSpace(entry.Text) == "" || entry.Role == "" {
+		return fmt.Errorf("invalid_message_entry")
+	}
+	if entry.ID == "" {
+		entry.ID = fmt.Sprintf("msg-%d", time.Now().UTC().UnixNano())
+	}
+	if entry.ParentID == "" && len(history) > 0 {
+		entry.ParentID = history[len(history)-1].ID
+	}
+	if entry.CreatedAt == "" {
+		entry.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	return m.AppendTo(sessionID, entry)
+}
+
 func (m *Manager) AppendTo(sessionID string, record any) error {
 	if sessionID == "" {
 		return fmt.Errorf("empty_session_id")
@@ -219,7 +258,15 @@ func (m *Manager) BuildMessageContext(sessionID string) ([]MessageEntry, error) 
 		}
 		out = append(out, rec)
 	}
-	return out, nil
+	return NormalizeMessageChain(out), nil
+}
+
+func (m *Manager) BuildMessageContextFromLeaf(sessionID, leafID string) ([]MessageEntry, error) {
+	entries, err := m.BuildMessageContext(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return BuildMessagePath(entries, leafID), nil
 }
 
 func (m *Manager) readMeta(sessionID string) (SessionMeta, error) {
