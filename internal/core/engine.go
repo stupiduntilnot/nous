@@ -225,6 +225,20 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				}
 			case provider.EventAwaitNext:
 				awaitNext = true
+			case provider.EventDone:
+				if ev.StopReason != "" &&
+					ev.StopReason != provider.StopReasonUnknown &&
+					ev.StopReason != provider.StopReasonStop {
+					e.runtime.Status(fmt.Sprintf("provider_stop_reason: %s", ev.StopReason))
+				}
+				if ev.Usage != nil {
+					e.runtime.Status(fmt.Sprintf(
+						"provider_usage: input=%d output=%d total=%d",
+						ev.Usage.InputTokens,
+						ev.Usage.OutputTokens,
+						ev.Usage.TotalTokens,
+					))
+				}
 			case provider.EventError:
 				if ev.Err != nil {
 					e.runtime.Error("provider_error", "provider stream returned error", ev.Err)

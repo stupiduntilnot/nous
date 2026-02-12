@@ -104,6 +104,11 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 					} `json:"tool_calls"`
 				} `json:"message"`
 			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(body, &decoded); err != nil {
 			out <- Event{Type: EventError, Err: err}
@@ -140,9 +145,36 @@ func (a *openAICompatAdapter) Stream(ctx context.Context, req Request) <-chan Ev
 		if finishReason == "tool_calls" {
 			out <- Event{Type: EventAwaitNext}
 		}
-		out <- Event{Type: EventDone}
+		var usage *Usage
+		if decoded.Usage.PromptTokens > 0 || decoded.Usage.CompletionTokens > 0 || decoded.Usage.TotalTokens > 0 {
+			usage = &Usage{
+				InputTokens:  decoded.Usage.PromptTokens,
+				OutputTokens: decoded.Usage.CompletionTokens,
+				TotalTokens:  decoded.Usage.TotalTokens,
+			}
+		}
+		out <- Event{
+			Type:       EventDone,
+			StopReason: mapOpenAIStopReason(finishReason),
+			Usage:      usage,
+		}
 	}()
 	return out
+}
+
+func mapOpenAIStopReason(reason string) StopReason {
+	switch strings.TrimSpace(reason) {
+	case "tool_calls":
+		return StopReasonToolUse
+	case "length":
+		return StopReasonLength
+	case "stop":
+		return StopReasonStop
+	case "":
+		return StopReasonUnknown
+	default:
+		return StopReasonUnknown
+	}
 }
 
 func buildOpenAIMessages(messages []Message) []map[string]string {

@@ -13,6 +13,16 @@ const (
 	EventError     EventType = "error"
 )
 
+type StopReason string
+
+const (
+	StopReasonUnknown StopReason = "unknown"
+	StopReasonStop    StopReason = "stop"
+	StopReasonLength  StopReason = "length"
+	StopReasonToolUse StopReason = "tool_use"
+	StopReasonError   StopReason = "error"
+)
+
 type ToolCall struct {
 	ID        string
 	Name      string
@@ -29,11 +39,19 @@ type Request struct {
 	ActiveTools []string
 }
 
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
+
 type Event struct {
-	Type     EventType
-	Delta    string
-	ToolCall ToolCall
-	Err      error
+	Type       EventType
+	Delta      string
+	ToolCall   ToolCall
+	StopReason StopReason
+	Usage      *Usage
+	Err        error
 }
 
 type Adapter interface {

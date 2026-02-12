@@ -72,6 +72,9 @@ func assertTextResponseContract(t *testing.T, evs []Event) {
 	if evs[len(evs)-1].Type != EventDone {
 		t.Fatalf("last event must be done, got %+v", evs[len(evs)-1])
 	}
+	if evs[len(evs)-1].StopReason == "" {
+		t.Fatalf("done event must include stop reason, got %+v", evs[len(evs)-1])
+	}
 	hasText := false
 	for _, ev := range evs {
 		if ev.Type == EventError {

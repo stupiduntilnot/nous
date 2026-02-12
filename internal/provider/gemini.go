@@ -85,12 +85,18 @@ func (a *GeminiAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 
 		var decoded struct {
 			Candidates []struct {
-				Content struct {
+				FinishReason string `json:"finishReason"`
+				Content      struct {
 					Parts []struct {
 						Text string `json:"text"`
 					} `json:"parts"`
 				} `json:"content"`
 			} `json:"candidates"`
+			UsageMetadata struct {
+				PromptTokenCount     int `json:"promptTokenCount"`
+				CandidatesTokenCount int `json:"candidatesTokenCount"`
+				TotalTokenCount      int `json:"totalTokenCount"`
+			} `json:"usageMetadata"`
 		}
 		if err := json.Unmarshal(body, &decoded); err != nil {
 			out <- Event{Type: EventError, Err: err}
@@ -106,7 +112,32 @@ func (a *GeminiAdapter) Stream(ctx context.Context, req Request) <-chan Event {
 			text.WriteString(p.Text)
 		}
 		out <- Event{Type: EventTextDelta, Delta: text.String()}
-		out <- Event{Type: EventDone}
+		var usage *Usage
+		if decoded.UsageMetadata.PromptTokenCount > 0 || decoded.UsageMetadata.CandidatesTokenCount > 0 || decoded.UsageMetadata.TotalTokenCount > 0 {
+			usage = &Usage{
+				InputTokens:  decoded.UsageMetadata.PromptTokenCount,
+				OutputTokens: decoded.UsageMetadata.CandidatesTokenCount,
+				TotalTokens:  decoded.UsageMetadata.TotalTokenCount,
+			}
+		}
+		out <- Event{
+			Type:       EventDone,
+			StopReason: mapGeminiStopReason(decoded.Candidates[0].FinishReason),
+			Usage:      usage,
+		}
 	}()
 	return out
+}
+
+func mapGeminiStopReason(reason string) StopReason {
+	switch strings.TrimSpace(strings.ToUpper(reason)) {
+	case "STOP":
+		return StopReasonStop
+	case "MAX_TOKENS":
+		return StopReasonLength
+	case "":
+		return StopReasonUnknown
+	default:
+		return StopReasonUnknown
+	}
 }

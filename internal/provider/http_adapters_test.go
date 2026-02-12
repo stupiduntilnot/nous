@@ -90,6 +90,10 @@ func TestOpenAIAdapterToolCalls(t *testing.T) {
 	if evs[2].Type != EventAwaitNext {
 		t.Fatalf("expected await-next event, got %+v", evs[2])
 	}
+	done := evs[len(evs)-1]
+	if done.Type != EventDone || done.StopReason != StopReasonToolUse {
+		t.Fatalf("expected done tool_use event, got %+v", done)
+	}
 }
 
 func TestOpenAIAdapterTextToolCallStaysAsText(t *testing.T) {
@@ -147,6 +151,82 @@ func TestGeminiAdapterStream(t *testing.T) {
 	}
 	if evs[1].Type != EventTextDelta || evs[1].Delta != "hello gemini" {
 		t.Fatalf("unexpected text event: %+v", evs[1])
+	}
+	done := evs[len(evs)-1]
+	if done.Type != EventDone || done.StopReason == "" {
+		t.Fatalf("expected done event with stop reason, got %+v", done)
+	}
+}
+
+func TestOpenAIAdapterDoneIncludesUsageAndStopReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"finish_reason": "length",
+					"message":       map[string]any{"content": "truncated"},
+				},
+			},
+			"usage": map[string]any{
+				"prompt_tokens":     10,
+				"completion_tokens": 5,
+				"total_tokens":      15,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	done := evs[len(evs)-1]
+	if done.Type != EventDone {
+		t.Fatalf("expected done event, got %+v", done)
+	}
+	if done.StopReason != StopReasonLength {
+		t.Fatalf("expected length stop reason, got %+v", done)
+	}
+	if done.Usage == nil || done.Usage.InputTokens != 10 || done.Usage.OutputTokens != 5 || done.Usage.TotalTokens != 15 {
+		t.Fatalf("unexpected usage on done event: %+v", done.Usage)
+	}
+}
+
+func TestGeminiAdapterDoneIncludesUsageAndStopReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"finishReason": "STOP",
+					"content":      map[string]any{"parts": []map[string]any{{"text": "hello gemini"}}},
+				},
+			},
+			"usageMetadata": map[string]any{
+				"promptTokenCount":     9,
+				"candidatesTokenCount": 4,
+				"totalTokenCount":      13,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewGeminiAdapter("test-key", "gemini-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new gemini adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}}))
+	done := evs[len(evs)-1]
+	if done.Type != EventDone {
+		t.Fatalf("expected done event, got %+v", done)
+	}
+	if done.StopReason != StopReasonStop {
+		t.Fatalf("expected stop stop reason, got %+v", done)
+	}
+	if done.Usage == nil || done.Usage.InputTokens != 9 || done.Usage.OutputTokens != 4 || done.Usage.TotalTokens != 13 {
+		t.Fatalf("unexpected usage on done event: %+v", done.Usage)
 	}
 }
 
