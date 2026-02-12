@@ -4,7 +4,7 @@ SOCKET ?= /tmp/nous-core.sock
 API_BASE ?= https://api.openai.com/v1
 OPENAI_MODEL_SMALL ?= gpt-4o-mini
 OPENAI_MODEL_MEDIUM ?= gpt-4o
-OPENAI_MODEL_LARGE ?= o3
+OPENAI_MODEL_LARGE ?= gpt-5.2-codex
 
 START_SIZE := $(firstword $(filter small medium large,$(MAKECMDGOALS)))
 START_MODEL := $(OPENAI_MODEL_MEDIUM)
