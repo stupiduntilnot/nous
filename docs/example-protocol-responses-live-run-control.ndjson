@@ -1,4 +1,4 @@
 {"v":"1","id":"cmd-live-1","type":"accepted","payload":{"command":"prompt","run_id":"run-live-1"},"ok":true}
-{"v":"1","id":"cmd-live-2","type":"accepted","payload":{"command":"steer"},"ok":true}
-{"v":"1","id":"cmd-live-3","type":"accepted","payload":{"command":"follow_up"},"ok":true}
-{"v":"1","id":"cmd-live-4","type":"accepted","payload":{"command":"abort"},"ok":true}
+{"v":"1","id":"cmd-live-2","type":"accepted","payload":{"command":"steer","run_id":"run-live-1"},"ok":true}
+{"v":"1","id":"cmd-live-3","type":"accepted","payload":{"command":"follow_up","run_id":"run-live-1"},"ok":true}
+{"v":"1","id":"cmd-live-4","type":"accepted","payload":{"command":"abort","run_id":"run-live-1"},"ok":true}

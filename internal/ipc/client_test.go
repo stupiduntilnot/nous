@@ -1044,7 +1044,8 @@ func TestAsyncPromptRunControlAcceptsSteerFollowUpAbort(t *testing.T) {
 	if got, _ := promptResp.Payload["command"].(string); got != "prompt" {
 		t.Fatalf("unexpected prompt accepted payload: %+v", promptResp.Payload)
 	}
-	if runID, _ := promptResp.Payload["run_id"].(string); runID == "" {
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
 		t.Fatalf("missing run_id in prompt accepted payload: %+v", promptResp.Payload)
 	}
 
@@ -1065,6 +1066,9 @@ func TestAsyncPromptRunControlAcceptsSteerFollowUpAbort(t *testing.T) {
 	if !steerResp.OK || steerResp.Type != "accepted" {
 		t.Fatalf("unexpected steer response: %+v", steerResp)
 	}
+	if got, _ := steerResp.Payload["run_id"].(string); got != runID {
+		t.Fatalf("steer run_id mismatch: got=%q want=%q payload=%+v", got, runID, steerResp.Payload)
+	}
 
 	followResp, err := SendCommand(socket, protocol.Envelope{
 		ID:      "async-ctrl-follow",
@@ -1077,6 +1081,9 @@ func TestAsyncPromptRunControlAcceptsSteerFollowUpAbort(t *testing.T) {
 	if !followResp.OK || followResp.Type != "accepted" {
 		t.Fatalf("unexpected follow_up response: %+v", followResp)
 	}
+	if got, _ := followResp.Payload["run_id"].(string); got != runID {
+		t.Fatalf("follow_up run_id mismatch: got=%q want=%q payload=%+v", got, runID, followResp.Payload)
+	}
 
 	abortResp, err := SendCommand(socket, protocol.Envelope{
 		ID:      "async-ctrl-abort",
@@ -1088,6 +1095,9 @@ func TestAsyncPromptRunControlAcceptsSteerFollowUpAbort(t *testing.T) {
 	}
 	if !abortResp.OK || abortResp.Type != "accepted" {
 		t.Fatalf("unexpected abort response: %+v", abortResp)
+	}
+	if got, _ := abortResp.Payload["run_id"].(string); got != runID {
+		t.Fatalf("abort run_id mismatch: got=%q want=%q payload=%+v", got, runID, abortResp.Payload)
 	}
 
 	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)

@@ -125,9 +125,10 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		if cmd == "" {
 			t.Fatalf("response line %d accepted payload requires command", line)
 		}
-		if cmd == "prompt" {
+		switch cmd {
+		case "prompt", "steer", "follow_up", "abort":
 			if runID, _ := resp.Payload["run_id"].(string); runID == "" {
-				t.Fatalf("response line %d accepted prompt payload requires run_id", line)
+				t.Fatalf("response line %d accepted %s payload requires run_id", line, cmd)
 			}
 		}
 	case "result":

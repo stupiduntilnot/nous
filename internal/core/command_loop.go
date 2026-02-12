@@ -65,6 +65,12 @@ func (l *CommandLoop) State() RunState {
 	return l.state
 }
 
+func (l *CommandLoop) CurrentRunID() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.runID
+}
+
 func (l *CommandLoop) Prompt(text string) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("empty_prompt")

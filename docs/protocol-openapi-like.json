@@ -49,9 +49,9 @@
   "x-response-payload-requirements": {
     "pong": ["message"],
     "accepted:prompt": ["command", "run_id"],
-    "accepted:steer": ["command"],
-    "accepted:follow_up": ["command"],
-    "accepted:abort": ["command"],
+    "accepted:steer": ["command", "run_id"],
+    "accepted:follow_up": ["command", "run_id"],
+    "accepted:abort": ["command", "run_id"],
     "accepted:set_active_tools": ["command"],
     "result": ["output", "events", "session_id"],
     "session": ["session_id", "active"],

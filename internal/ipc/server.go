@@ -334,7 +334,11 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		if err := s.loop.Steer(text); err != nil {
 			return responseErr(env.ID, "command_rejected", err.Error())
 		}
-		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "steer"}})
+		payload := map[string]any{"command": "steer"}
+		if runID := s.loop.CurrentRunID(); runID != "" {
+			payload["run_id"] = runID
+		}
+		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: payload})
 	case protocol.CmdFollowUp:
 		text, ok := env.Payload["text"].(string)
 		if !ok || text == "" {
@@ -343,12 +347,20 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		if err := s.loop.FollowUp(text); err != nil {
 			return responseErr(env.ID, "command_rejected", err.Error())
 		}
-		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "follow_up"}})
+		payload := map[string]any{"command": "follow_up"}
+		if runID := s.loop.CurrentRunID(); runID != "" {
+			payload["run_id"] = runID
+		}
+		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: payload})
 	case protocol.CmdAbort:
 		if err := s.loop.Abort(); err != nil {
 			return responseErr(env.ID, "command_rejected", err.Error())
 		}
-		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: map[string]any{"command": "abort"}})
+		payload := map[string]any{"command": "abort"}
+		if runID := s.loop.CurrentRunID(); runID != "" {
+			payload["run_id"] = runID
+		}
+		return responseOK(protocol.Envelope{V: protocol.Version, ID: env.ID, Type: "accepted", Payload: payload})
 	case protocol.CmdSetActiveTools:
 		raw, ok := env.Payload["tools"].([]any)
 		if !ok {
