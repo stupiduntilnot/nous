@@ -66,3 +66,59 @@ func TestEngineDefaultConvertFiltersCustomMessages(t *testing.T) {
 		t.Fatalf("unexpected provider message payload: %+v", p.last.Messages[0])
 	}
 }
+
+func TestDefaultConvertPreservesToolCallAndToolResultMetadata(t *testing.T) {
+	input := []Message{
+		{
+			Role: RoleAssistant,
+			Blocks: []MessageBlock{
+				{
+					Type:       BlockTypeToolCall,
+					ToolCallID: "call-1",
+					ToolName:   "read",
+					Arguments:  map[string]any{"path": "/tmp/a"},
+				},
+			},
+		},
+		{
+			Role:       RoleToolResult,
+			Text:       "read => 1",
+			ToolCallID: "call-1",
+			Blocks: []MessageBlock{
+				{Type: BlockTypeToolResult, Text: "read => 1", ToolCallID: "call-1", ToolName: "read"},
+			},
+		},
+	}
+
+	got := defaultConvertToLLMMessages(input)
+	if len(got) != 2 {
+		t.Fatalf("unexpected converted message count: %d", len(got))
+	}
+	if got[0].Role != "assistant" || len(got[0].ToolCalls) != 1 {
+		t.Fatalf("expected assistant tool call metadata, got %+v", got[0])
+	}
+	if got[0].ToolCalls[0].ID != "call-1" || got[0].ToolCalls[0].Name != "read" {
+		t.Fatalf("unexpected assistant tool call metadata: %+v", got[0].ToolCalls[0])
+	}
+	if got[1].Role != "tool_result" || got[1].ToolCallID != "call-1" {
+		t.Fatalf("expected tool_result metadata, got %+v", got[1])
+	}
+}
+
+func TestDefaultConvertRendersUnknownBlocksToTextFallback(t *testing.T) {
+	input := []Message{
+		{
+			Role: RoleUser,
+			Blocks: []MessageBlock{
+				{Type: "custom_widget", Text: "custom block text"},
+			},
+		},
+	}
+	got := defaultConvertToLLMMessages(input)
+	if len(got) != 1 {
+		t.Fatalf("unexpected converted message count: %d", len(got))
+	}
+	if got[0].Content != "custom block text" {
+		t.Fatalf("unexpected fallback content: %+v", got[0])
+	}
+}

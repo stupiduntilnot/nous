@@ -177,25 +177,83 @@ func mapOpenAIStopReason(reason string) StopReason {
 	}
 }
 
-func buildOpenAIMessages(messages []Message) []map[string]string {
-	out := make([]map[string]string, 0, len(messages))
+func buildOpenAIMessages(messages []Message) []map[string]any {
+	out := make([]map[string]any, 0, len(messages))
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
 		content := strings.TrimSpace(msg.Content)
-		if role == "" || content == "" {
+		if content == "" {
+			content = strings.TrimSpace(renderProviderBlocksAsText(msg.Blocks))
+		}
+		if role == "" {
 			continue
 		}
 		switch role {
 		case "assistant", "system", "user":
 		case "tool_result":
-			role = "user"
-			content = "Tool result:\n" + content
+			if strings.TrimSpace(msg.ToolCallID) != "" {
+				if content == "" {
+					continue
+				}
+				out = append(out, map[string]any{
+					"role":         "tool",
+					"tool_call_id": strings.TrimSpace(msg.ToolCallID),
+					"content":      content,
+				})
+				continue
+			}
+			if content == "" {
+				continue
+			}
+			out = append(out, map[string]any{
+				"role":    "user",
+				"content": "Tool result:\n" + content,
+			})
+			continue
 		default:
 			role = "user"
 		}
-		out = append(out, map[string]string{
+		if role == "assistant" && len(msg.ToolCalls) > 0 {
+			assistant := map[string]any{
+				"role":       "assistant",
+				"tool_calls": openAIToolCalls(msg.ToolCalls),
+				"content":    content,
+			}
+			out = append(out, assistant)
+			continue
+		}
+		if content == "" {
+			continue
+		}
+		out = append(out, map[string]any{
 			"role":    role,
 			"content": content,
+		})
+	}
+	return out
+}
+
+func openAIToolCalls(toolCalls []ToolCall) []map[string]any {
+	out := make([]map[string]any, 0, len(toolCalls))
+	for _, call := range toolCalls {
+		id := strings.TrimSpace(call.ID)
+		name := strings.TrimSpace(call.Name)
+		if id == "" || name == "" {
+			continue
+		}
+		args := "{}"
+		if len(call.Arguments) > 0 {
+			if b, err := json.Marshal(call.Arguments); err == nil {
+				args = string(b)
+			}
+		}
+		out = append(out, map[string]any{
+			"id":   id,
+			"type": "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": args,
+			},
 		})
 	}
 	return out

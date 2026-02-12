@@ -396,6 +396,60 @@ func TestOpenAIAdapterUsesStructuredMessages(t *testing.T) {
 	}
 }
 
+func TestOpenAIAdapterMapsToolResultWithToolCallIDToToolRole(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		rawMsgs, ok := req["messages"].([]any)
+		if !ok || len(rawMsgs) != 3 {
+			t.Fatalf("expected three structured messages, got: %#v", req["messages"])
+		}
+		assistant, _ := rawMsgs[1].(map[string]any)
+		if role, _ := assistant["role"].(string); role != "assistant" {
+			t.Fatalf("unexpected second role: %#v", assistant)
+		}
+		if _, ok := assistant["tool_calls"].([]any); !ok {
+			t.Fatalf("assistant tool_calls missing: %#v", assistant)
+		}
+		toolMsg, _ := rawMsgs[2].(map[string]any)
+		if role, _ := toolMsg["role"].(string); role != "tool" {
+			t.Fatalf("expected tool_result to map to tool role with call id, got: %#v", toolMsg)
+		}
+		if callID, _ := toolMsg["tool_call_id"].(string); callID != "call-1" {
+			t.Fatalf("unexpected tool_call_id: %#v", toolMsg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Messages: []Message{
+			{Role: "user", Content: "please summarize"},
+			{Role: "assistant", ToolCalls: []ToolCall{{ID: "call-1", Name: "read", Arguments: map[string]any{"path": "/tmp/a"}}}},
+			{Role: "tool_result", Content: "read => 1", ToolCallID: "call-1"},
+		},
+	}))
+	if len(evs) < 3 || evs[1].Type != EventTextDelta {
+		t.Fatalf("unexpected events: %+v", evs)
+	}
+}
+
 func TestOpenAIAdapterWriteToolSchemaRequiresPathAndContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

@@ -29,9 +29,20 @@ type ToolCall struct {
 	Arguments map[string]any
 }
 
+type ContentBlock struct {
+	Type       string         `json:"type"`
+	Text       string         `json:"text,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolName   string         `json:"tool_name,omitempty"`
+	Arguments  map[string]any `json:"arguments,omitempty"`
+}
+
 type Message struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	Blocks     []ContentBlock
+	ToolCallID string
+	ToolCalls  []ToolCall
 }
 
 type Request struct {

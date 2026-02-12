@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"nous/internal/extension"
@@ -205,9 +206,15 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		Messages:    llmMessages,
 		ActiveTools: e.activeToolNames(),
 	}
+	type toolResult struct {
+		CallID string
+		Name   string
+		Result string
+	}
 	for step := 0; step < 8; step++ {
 		awaitNext := false
-		stepToolResults := make([]string, 0, 4)
+		stepToolResults := make([]toolResult, 0, 4)
+		stepToolCalls := make([]provider.ToolCall, 0, 4)
 		var stepAssistant string
 		steeringQueued := steerPendingCheckerFromContext(ctx)
 		interruptTools := false
@@ -221,6 +228,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 					return "", err
 				}
 			case provider.EventToolCall:
+				stepToolCalls = append(stepToolCalls, provider.ToolCall{
+					ID:        ev.ToolCall.ID,
+					Name:      ev.ToolCall.Name,
+					Arguments: cloneMap(ev.ToolCall.Arguments),
+				})
 				var (
 					res string
 					err error
@@ -234,7 +246,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 					return "", err
 				}
 				final += res
-				stepToolResults = append(stepToolResults, fmt.Sprintf("%s => %s", ev.ToolCall.Name, res))
+				stepToolResults = append(stepToolResults, toolResult{
+					CallID: ev.ToolCall.ID,
+					Name:   ev.ToolCall.Name,
+					Result: fmt.Sprintf("%s => %s", ev.ToolCall.Name, res),
+				})
 				if err := e.runtime.MessageUpdate(assistantID, res); err != nil {
 					return "", err
 				}
@@ -267,7 +283,24 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				return "", err
 			}
 		}
-		messages = appendMessage(messages, RoleAssistant, stepAssistant)
+		if strings.TrimSpace(stepAssistant) != "" || len(stepToolCalls) > 0 {
+			assistantMsg := Message{
+				Role: RoleAssistant,
+				Text: strings.TrimSpace(stepAssistant),
+			}
+			if assistantMsg.Text != "" {
+				assistantMsg.Blocks = append(assistantMsg.Blocks, MessageBlock{Type: BlockTypeText, Text: assistantMsg.Text})
+			}
+			for _, call := range stepToolCalls {
+				assistantMsg.Blocks = append(assistantMsg.Blocks, MessageBlock{
+					Type:       BlockTypeToolCall,
+					ToolCallID: call.ID,
+					ToolName:   call.Name,
+					Arguments:  cloneMap(call.Arguments),
+				})
+			}
+			messages = append(messages, assistantMsg)
+		}
 		// Continue the run whenever this turn produced tool results.
 		// Some providers do not emit explicit await-next markers even when
 		// tool calls are present, but pi-style semantics still require
@@ -278,8 +311,8 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 				e.runtime.Error("tool_loop_limit_exceeded", "tool await-next loop exceeded max rounds", err)
 				return "", err
 			}
-			for _, toolResult := range stepToolResults {
-				messages = appendMessage(messages, RoleToolResult, toolResult)
+			for _, item := range stepToolResults {
+				messages = appendToolResultMessage(messages, item.CallID, item.Name, item.Result)
 			}
 			next, err := e.buildProviderMessages(ctx, messages)
 			if err != nil {

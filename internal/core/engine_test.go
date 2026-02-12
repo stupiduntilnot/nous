@@ -8,6 +8,19 @@ import (
 	"nous/internal/provider"
 )
 
+type captureRequestProvider struct {
+	last provider.Request
+}
+
+func (c *captureRequestProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
+	c.last = req
+	out := make(chan provider.Event, 2)
+	out <- provider.Event{Type: provider.EventTextDelta, Delta: "ok"}
+	out <- provider.Event{Type: provider.EventDone}
+	close(out)
+	return out
+}
+
 func TestPromptWithFakeProvider(t *testing.T) {
 	r := NewRuntime()
 	p := provider.NewMockAdapter()
@@ -91,5 +104,31 @@ func TestPromptWithinExternalRunEmitsSingleRunLifecycle(t *testing.T) {
 	}
 	if got := count(EventTurnEnd); got != 2 {
 		t.Fatalf("turn_end count mismatch: got=%d events=%v", got, events)
+	}
+}
+
+func TestPromptFallbackRendersUnsupportedBlocks(t *testing.T) {
+	r := NewRuntime()
+	p := &captureRequestProvider{}
+	e := NewEngine(r, p)
+
+	e.SetTransformContext(func(_ context.Context, messages []Message) ([]Message, error) {
+		return append(messages, Message{
+			Role: RoleUser,
+			Blocks: []MessageBlock{
+				{Type: "unknown_block", Text: "fallback-text"},
+			},
+		}), nil
+	})
+
+	if _, err := e.Prompt(context.Background(), "run-block-fallback", "hello"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if len(p.last.Messages) < 2 {
+		t.Fatalf("expected transformed message in provider payload, got: %+v", p.last.Messages)
+	}
+	last := p.last.Messages[len(p.last.Messages)-1]
+	if last.Content != "fallback-text" {
+		t.Fatalf("expected fallback block rendering, got: %+v", last)
 	}
 }
