@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -142,6 +143,49 @@ func TestEngineRunsRunLifecycleHooks(t *testing.T) {
 	}
 	if !startCalled || !endCalled {
 		t.Fatalf("expected run lifecycle hooks to be called: start=%v end=%v", startCalled, endCalled)
+	}
+}
+
+func TestEngineIsolatesLifecycleHookErrorsAsWarnings(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, provider.NewMockAdapter())
+
+	m := extension.NewManager()
+	m.RegisterRunStartHook(func(extension.RunStartHookInput) error {
+		return fmt.Errorf("start failed")
+	})
+	m.RegisterTurnEndHook(func(extension.TurnEndHookInput) error {
+		return fmt.Errorf("turn failed")
+	})
+	m.RegisterRunEndHook(func(extension.RunEndHookInput) error {
+		return fmt.Errorf("end failed")
+	})
+	e.SetExtensionManager(m)
+
+	events := make([]Event, 0, 8)
+	unsub := e.Subscribe(func(ev Event) {
+		events = append(events, ev)
+	})
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-ext-hook-isolation", "hello"); err != nil {
+		t.Fatalf("prompt should not fail on lifecycle hook errors: %v", err)
+	}
+
+	warnings := make([]string, 0, 3)
+	for _, ev := range events {
+		if ev.Type == EventWarning && ev.Code == "extension_hook_error" {
+			warnings = append(warnings, ev.Message)
+		}
+	}
+	if len(warnings) < 3 {
+		t.Fatalf("expected lifecycle hook warnings, got: %+v", warnings)
+	}
+	joined := strings.Join(warnings, "\n")
+	for _, want := range []string{"run_start:", "turn_end:", "run_end:"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing warning for %s in %q", want, joined)
+		}
 	}
 }
 

@@ -96,12 +96,14 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	}
 	if e.ext != nil {
 		if err := e.ext.RunRunStartHooks(runID); err != nil {
-			return "", err
+			e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_start: %v", err))
 		}
 	}
 	defer func() {
 		if e.ext != nil {
-			_ = e.ext.RunRunEndHooks(runID, e.runtime.TurnNumber())
+			if err := e.ext.RunRunEndHooks(runID, e.runtime.TurnNumber()); err != nil {
+				e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_end: %v", err))
+			}
 		}
 		_ = e.runtime.EndRun()
 	}()
@@ -112,7 +114,9 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 	defer func() {
 		_ = e.runtime.EndTurn()
 		if e.ext != nil {
-			_ = e.ext.RunTurnEndHooks(runID, e.runtime.TurnNumber())
+			if err := e.ext.RunTurnEndHooks(runID, e.runtime.TurnNumber()); err != nil {
+				e.runtime.Warning("extension_hook_error", fmt.Sprintf("turn_end: %v", err))
+			}
 		}
 	}()
 

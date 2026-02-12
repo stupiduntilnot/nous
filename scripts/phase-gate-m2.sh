@@ -27,7 +27,7 @@ echo "[m2-gate] run protocol fixture consistency tests"
 go test ./internal/protocol -run 'TestProtocolExamplesCommandsNDJSON|TestProtocolExamplesResponsesNDJSON|TestProtocolExamplesEventsNDJSON|TestResponseExamplesCoveredByResponseRequirements|TestResponseRequirementsHaveSuccessExamples' -count=1
 
 echo "[m2-gate] run structured loop + provider contract tests"
-go test ./internal/core -run 'TestAwaitNextTurnLoopsWithToolResults|TestToolCallWithoutAwaitStillContinuesNextTurn|TestEngineAppliesInputHookBeforeProviderCall' -count=1
+go test ./internal/core -run 'TestAwaitNextTurnLoopsWithToolResults|TestToolCallWithoutAwaitStillContinuesNextTurn|TestEngineAppliesInputHookBeforeProviderCall|TestEngineIsolatesLifecycleHookErrorsAsWarnings' -count=1
 go test ./internal/provider -run 'TestResolvePromptPrefersStructuredMessages|TestOpenAIAdapterUsesStructuredMessages|TestAdapterContractMockText|TestAdapterContractOpenAIText|TestAdapterContractGeminiText' -count=1
 
 echo "[m2-gate] milestone 2 gate passed"
