@@ -21,13 +21,14 @@ Completed steps:
 7. C1: async-run session persistence pinned to prompt-origin session (safe against mid-run session switch).
 8. C2: extension run lifecycle hooks (`run_start`, `run_end`) integrated into engine pipeline.
 9. D1: TUI prompt path switched to stream-first rendering via live event socket.
+10. B3: provider request contract finalized to message-only (`Messages`), legacy fields removed.
+11. C3: session schema v2 typed message entries + migration-compatible decoding checks.
+12. C4: lifecycle hook error isolation with warning-event observability.
+13. D2: TUI pending queue visibility for steer/follow_up during active runs.
+14. D3: TUI run/turn/tool progress rendering + updated `tui-evidence` flow.
 
 Pending steps:
-1. B3: remove remaining legacy provider request fields (`Prompt`, `ToolResults`) as primary contract.
-2. C3: session schema v2 with explicit typed entry model and migration compatibility checks.
-3. C4: extension hook error isolation semantics and observability improvements.
-4. D2: TUI queue visibility for pending steer/follow_up during active run.
-5. D3: richer run/turn/tool progress UX and evidence updates.
+1. None currently tracked.
 
 ## 3. Atomic Step Template
 
@@ -54,4 +55,4 @@ Current M2 gate enforces:
 2. Protocol fixture consistency.
 3. Structured loop/provider contract checks.
 
-Before marking Milestone 2 complete, add pending-step checks into `scripts/phase-gate-m2.sh`.
+Current `scripts/phase-gate-m2.sh` includes checks for IPC run-control, protocol fixtures, core/provider structured semantics, and TUI queue/progress tests.
