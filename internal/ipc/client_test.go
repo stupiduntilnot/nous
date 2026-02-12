@@ -1191,6 +1191,93 @@ func TestAsyncPromptRunControlSteerPreemptsFollowUpOverIPC(t *testing.T) {
 	}
 }
 
+func TestAsyncPromptPersistsToOriginalSessionWhenSwitchingMidRun(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	exec := newOrderedExecutor()
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(exec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	firstSessionResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "sess-1",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	})
+	if err != nil || !firstSessionResp.OK {
+		t.Fatalf("new session failed: resp=%+v err=%v", firstSessionResp, err)
+	}
+	origSessionID, _ := firstSessionResp.Payload["session_id"].(string)
+	if origSessionID == "" {
+		t.Fatalf("missing first session id: %+v", firstSessionResp.Payload)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "switch-mid-run-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("prompt wait=false failed: resp=%+v err=%v", promptResp, err)
+	}
+
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("prompt turn did not start")
+	}
+
+	secondSessionResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "sess-2",
+		Type:    string(protocol.CmdNewSession),
+		Payload: map[string]any{},
+	})
+	if err != nil || !secondSessionResp.OK {
+		t.Fatalf("second new session failed: resp=%+v err=%v", secondSessionResp, err)
+	}
+	newSessionID, _ := secondSessionResp.Payload["session_id"].(string)
+	if newSessionID == "" || newSessionID == origSessionID {
+		t.Fatalf("unexpected second session id: orig=%q new=%q", origSessionID, newSessionID)
+	}
+
+	exec.release <- struct{}{}
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	origRecords, _, err := mgr.Recover(origSessionID)
+	if err != nil {
+		t.Fatalf("recover original session failed: %v", err)
+	}
+	if len(origRecords) < 2 {
+		t.Fatalf("expected original session to contain run records, got %d", len(origRecords))
+	}
+
+	newRecords, _, err := mgr.Recover(newSessionID)
+	if err != nil {
+		t.Fatalf("recover new session failed: %v", err)
+	}
+	if len(newRecords) != 0 {
+		t.Fatalf("expected switched session to have no run records, got %d", len(newRecords))
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestSendCommandWithTimeoutDeadline(t *testing.T) {
 	socket := testSocketPath(t)
 	ln, err := net.Listen("unix", socket)

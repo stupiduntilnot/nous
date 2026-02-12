@@ -98,13 +98,27 @@ func (m *Manager) SwitchSession(id string) error {
 
 func (m *Manager) Append(record any) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	activeID := m.activeID
+	m.mu.Unlock()
 
-	if m.activeID == "" {
+	if activeID == "" {
 		return fmt.Errorf("no_active_session")
 	}
+	return m.AppendTo(activeID, record)
+}
 
-	f, err := os.OpenFile(m.sessionPath(m.activeID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+func (m *Manager) AppendTo(sessionID string, record any) error {
+	if sessionID == "" {
+		return fmt.Errorf("empty_session_id")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := os.Stat(m.sessionPath(sessionID)); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(m.sessionPath(sessionID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}

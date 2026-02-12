@@ -36,6 +36,9 @@ type Server struct {
 	logWriter       io.Writer
 	logMu           sync.Mutex
 	unsub           func()
+	runMu           sync.Mutex
+	activeRunID     string
+	activeSessionID string
 	eventSeq        uint64
 	subSeq          uint64
 	subMu           sync.Mutex
@@ -114,7 +117,8 @@ func (s *Server) Serve(ctx context.Context) error {
 		})
 	}
 	s.loop.SetOnTurnEnd(func(r core.TurnResult) {
-		_ = s.appendTurnRecord(r.RunID, string(r.Kind), r.Input, r.Output)
+		sessionID := s.sessionIDForRun(r.RunID)
+		_ = s.appendTurnRecord(sessionID, r.RunID, string(r.Kind), r.Input, r.Output)
 	})
 	_ = os.Remove(s.socketPath)
 
@@ -433,7 +437,7 @@ func (s *Server) promptSync(reqID, text string) protocol.ResponseEnvelope {
 	if err != nil {
 		return responseErrWithCause(reqID, "provider_error", "provider request failed", err)
 	}
-	if err := s.appendTurnRecord(runID, string(core.TurnPrompt), text, out); err != nil {
+	if err := s.appendTurnRecord(sessionID, runID, string(core.TurnPrompt), text, out); err != nil {
 		return responseErrWithCause(reqID, "session_error", "failed to persist session records", err)
 	}
 	return responseOK(protocol.Envelope{
@@ -458,6 +462,7 @@ func (s *Server) promptAsync(reqID, text string) protocol.ResponseEnvelope {
 	if err != nil {
 		return responseErr(reqID, "command_rejected", err.Error())
 	}
+	s.setActiveRunSession(runID, sessionID)
 	return responseOK(protocol.Envelope{
 		V:    protocol.Version,
 		ID:   reqID,
@@ -480,13 +485,16 @@ func (s *Server) ensureActiveSession() (string, error) {
 	return s.sessions.NewSession()
 }
 
-func (s *Server) appendTurnRecord(runID, kind, input, output string) error {
-	_, err := s.ensureActiveSession()
-	if err != nil {
-		return err
+func (s *Server) appendTurnRecord(sessionID, runID, kind, input, output string) error {
+	if sessionID == "" {
+		var err error
+		sessionID, err = s.ensureActiveSession()
+		if err != nil {
+			return err
+		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if err := s.sessions.Append(sessionMessageRecord{
+	if err := s.sessions.AppendTo(sessionID, sessionMessageRecord{
 		Type:      "message",
 		Role:      "user",
 		Text:      input,
@@ -496,7 +504,7 @@ func (s *Server) appendTurnRecord(runID, kind, input, output string) error {
 	}); err != nil {
 		return err
 	}
-	return s.sessions.Append(sessionMessageRecord{
+	return s.sessions.AppendTo(sessionID, sessionMessageRecord{
 		Type:      "message",
 		Role:      "assistant",
 		Text:      output,
@@ -696,4 +704,20 @@ func (s *Server) writeLog(ev core.LogEvent) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 	_ = core.WriteLogEvent(s.logWriter, ev)
+}
+
+func (s *Server) setActiveRunSession(runID, sessionID string) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	s.activeRunID = runID
+	s.activeSessionID = sessionID
+}
+
+func (s *Server) sessionIDForRun(runID string) string {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	if runID != "" && runID == s.activeRunID {
+		return s.activeSessionID
+	}
+	return ""
 }

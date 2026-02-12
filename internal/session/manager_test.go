@@ -119,6 +119,43 @@ func TestManagerAppendRequiresActiveSession(t *testing.T) {
 	}
 }
 
+func TestManagerAppendToTargetsSpecificSession(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("new manager failed: %v", err)
+	}
+	id1, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	id2, err := m.NewSession()
+	if err != nil {
+		t.Fatalf("new session failed: %v", err)
+	}
+	if err := m.SwitchSession(id2); err != nil {
+		t.Fatalf("switch failed: %v", err)
+	}
+
+	if err := m.AppendTo(id1, map[string]any{"id": "targeted"}); err != nil {
+		t.Fatalf("append to specific session failed: %v", err)
+	}
+
+	recs1, skipped1, err := m.Recover(id1)
+	if err != nil {
+		t.Fatalf("recover id1 failed: %v", err)
+	}
+	if skipped1 != 0 || len(recs1) != 1 {
+		t.Fatalf("unexpected id1 recover result: recs=%d skipped=%d", len(recs1), skipped1)
+	}
+	recs2, skipped2, err := m.Recover(id2)
+	if err != nil {
+		t.Fatalf("recover id2 failed: %v", err)
+	}
+	if skipped2 != 0 || len(recs2) != 0 {
+		t.Fatalf("unexpected id2 recover result: recs=%d skipped=%d", len(recs2), skipped2)
+	}
+}
+
 func TestManagerBranchAndBuildContext(t *testing.T) {
 	m, err := NewManager(t.TempDir())
 	if err != nil {
