@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/provider"
+	"nous/internal/core"
+	"nous/internal/provider"
 )
 
 func TestLSToolListsDirectory(t *testing.T) {

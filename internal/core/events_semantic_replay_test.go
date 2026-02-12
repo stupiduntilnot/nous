@@ -11,7 +11,7 @@ import (
 )
 
 func TestRuntimeEventSequenceMatchesProtocolExample(t *testing.T) {
-	want := readEventTypesFromNDJSON(t, filepath.FromSlash("../../docs/protocol/examples/events_runtime_tool_sequence.ndjson"))
+	want := readEventTypesFromNDJSON(t, filepath.FromSlash("../../docs/example-protocol-events-runtime-tool-sequence.ndjson"))
 
 	e := NewEngine(NewRuntime(), scriptedProvider{})
 	e.SetTools([]Tool{

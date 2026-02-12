@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOCKET="${1:-/tmp/pi-core-smoke.sock}"
+SOCKET="${1:-/tmp/nous-core-smoke.sock}"
 rm -f "$SOCKET"
 
 cleanup() {
@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-go run ./cmd/core --socket "$SOCKET" >/tmp/pi-core-smoke.log 2>&1 &
+go run ./cmd/core --socket "$SOCKET" >/tmp/nous-core-smoke.log 2>&1 &
 CORE_PID=$!
 
 for _ in {1..200}; do

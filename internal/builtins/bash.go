@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 const (

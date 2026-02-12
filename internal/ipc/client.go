@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"oh-my-agent/internal/protocol"
+	"nous/internal/protocol"
 )
 
 func SendCommand(socketPath string, cmd protocol.Envelope) (protocol.ResponseEnvelope, error) {

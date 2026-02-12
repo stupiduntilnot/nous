@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 func NewFindTool(cwd string) core.Tool {

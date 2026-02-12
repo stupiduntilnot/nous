@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOCKET="${1:-/tmp/pi-core-tui-evidence.sock}"
+SOCKET="${1:-/tmp/nous-core-tui-evidence.sock}"
 ARTIFACT_DIR="${2:-artifacts}"
 mkdir -p "$ARTIFACT_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -18,7 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-go run ./cmd/core --socket "$SOCKET" >/tmp/pi-core-tui-evidence.log 2>&1 &
+go run ./cmd/core --socket "$SOCKET" >/tmp/nous-core-tui-evidence.log 2>&1 &
 CORE_PID=$!
 
 for _ in {1..200}; do

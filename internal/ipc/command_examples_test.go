@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/extension"
-	"oh-my-agent/internal/provider"
-	"oh-my-agent/internal/protocol"
-	"oh-my-agent/internal/session"
+	"nous/internal/core"
+	"nous/internal/extension"
+	"nous/internal/provider"
+	"nous/internal/protocol"
+	"nous/internal/session"
 )
 
 func TestDispatchAcceptsProtocolCommandExamplePayloadShapes(t *testing.T) {
@@ -32,7 +32,7 @@ func TestDispatchAcceptsProtocolCommandExamplePayloadShapes(t *testing.T) {
 		t.Fatalf("new session failed: %v", err)
 	}
 
-	f, err := os.Open(filepath.FromSlash("../../docs/protocol/examples/commands.ndjson"))
+	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-commands.ndjson"))
 	if err != nil {
 		t.Fatalf("open command examples failed: %v", err)
 	}

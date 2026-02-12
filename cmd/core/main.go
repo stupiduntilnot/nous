@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"oh-my-agent/internal/builtins"
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/extension"
-	"oh-my-agent/internal/ipc"
-	"oh-my-agent/internal/provider"
+	"nous/internal/builtins"
+	"nous/internal/core"
+	"nous/internal/extension"
+	"nous/internal/ipc"
+	"nous/internal/provider"
 )
 
 func main() {
-	socket := flag.String("socket", "/tmp/pi-core.sock", "uds socket path")
+	socket := flag.String("socket", "/tmp/nous-core.sock", "uds socket path")
 	providerName := flag.String("provider", "mock", "provider: mock|openai|gemini")
 	model := flag.String("model", "", "provider model name")
 	apiBase := flag.String("api-base", "", "optional provider API base URL")

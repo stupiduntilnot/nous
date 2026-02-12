@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 type lsEntry struct {

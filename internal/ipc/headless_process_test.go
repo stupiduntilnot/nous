@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"oh-my-agent/internal/protocol"
+	"nous/internal/protocol"
 )
 
 func TestHeadlessCoreProcess(t *testing.T) {

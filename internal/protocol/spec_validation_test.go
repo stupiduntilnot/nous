@@ -11,7 +11,7 @@ import (
 )
 
 func TestProtocolSchemaValidation(t *testing.T) {
-	b, err := os.ReadFile("../../docs/protocol/openapi-like.json")
+	b, err := os.ReadFile("../../docs/protocol-openapi-like.json")
 	if err != nil {
 		t.Fatalf("failed to read openapi-like spec: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestProtocolSchemaValidation(t *testing.T) {
 }
 
 func TestPiMonoSemanticCompatibility(t *testing.T) {
-	b, err := os.ReadFile("../../docs/protocol/pi-mono-semantic-matrix.md")
+	b, err := os.ReadFile("../../docs/protocol-pi-mono-semantic-matrix.md")
 	if err != nil {
 		t.Fatalf("failed to read semantic matrix: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestPiMonoSemanticCompatibility(t *testing.T) {
 }
 
 func TestCommandPayloadRequirementsCoverAllCommands(t *testing.T) {
-	b, err := os.ReadFile("../../docs/protocol/openapi-like.json")
+	b, err := os.ReadFile("../../docs/protocol-openapi-like.json")
 	if err != nil {
 		t.Fatalf("failed to read openapi-like spec: %v", err)
 	}

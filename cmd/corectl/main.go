@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"oh-my-agent/internal/ipc"
-	"oh-my-agent/internal/protocol"
+	"nous/internal/ipc"
+	"nous/internal/protocol"
 )
 
 func main() {
-	socket := flag.String("socket", "/tmp/pi-core.sock", "uds socket path")
+	socket := flag.String("socket", "/tmp/nous-core.sock", "uds socket path")
 	requestTimeout := flag.Duration("request-timeout", 5*time.Second, "request timeout (e.g. 5s, 500ms)")
 	flag.Parse()
 

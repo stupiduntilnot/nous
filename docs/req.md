@@ -1,8 +1,8 @@
-# Go 版 Pi Agent 复刻需求文档（v0.1）
+# Nous 需求文档（Milestone 1）
 
 ## 1. 项目目标
 
-本项目目标是用 Go 语言复刻 `pi agent` 的核心运行结构，形成一个可运行、可扩展的 Agent 系统基础框架。
+本项目目标是用 Go 语言实现 `Nous`，并对齐 `pi agent` 的核心运行结构，形成一个可运行、可扩展的 Agent 系统基础框架。
 
 目标是“运行结构一比一复刻优先”，而不是先做差异化创新。
 
@@ -12,7 +12,7 @@
 
 1. 架构必须是 `Headless`核心 + `TUI` 前端模式。
 2. 采用 Headless Core 的理由：未来若需要支持 Web 前端，Core 无需修改即可复用。
-3. 复刻 `pi agent` 的核心运行语义（Agent loop、消息模型、Tool 执行模型、事件流模型、会话模型、扩展模型），以运行语义对齐为第一优先级。
+3. 对齐 `pi agent` 的核心运行语义（Agent loop、消息模型、Tool 执行模型、事件流模型、会话模型、扩展模型），以运行语义对齐为第一优先级。
 4. 明确边界：对齐的是 Core 运行语义，不是 PI 的进程拓扑或 UI 实现细节。
 
 ---
@@ -34,12 +34,21 @@
 
 1. DAG 并行 Tool 调度（后续优化）。
 2. 多租户/企业级权限系统（先定义边界，不完整实现）。
-3. 全量 provider 兼容（先做少量关键 provider： codex，claude code，gemini）。
+3. 最终目标 provider 兼容（codex/claude/gemini）不在本期一次性完成；本期先保证适配层与可用链路。
 4. 复杂前端能力（高级 UI、视觉优化、复杂交互系统）不在本期范围。
+
+### 3.3 Provider 目标分层（当前 vs 最终）
+
+1. 当前实现（Milestone 1）：
+- 已有 provider：`mock/openai/gemini`
+- 开发与验收主链路：`openai`
+2. 最终目标（后续里程碑）：
+- 补齐并稳定 `codex/claude/gemini` 三类 provider 语义对齐。
+- 在不破坏 Core 语义与协议的前提下逐步替换/扩展 adapter。
 
 ---
 
-### 3.3 开发优先级（P0-P2）
+### 3.4 开发优先级（P0-P2）
 
 1. `P0` Core Runtime
 - Agent loop / Turn / Message / Tool lifecycle
@@ -205,7 +214,7 @@
 ### Phase 1：Core Skeleton
 
 1. 建立 Agent loop、Message/Event 模型、Session 模型。
-2. 完成最小 provider adapter 与单 provider 接入（OpenAI）。
+2. 完成 provider adapter 抽象与当前可用接入（`mock/openai/gemini`），并以 OpenAI 作为主验收链路。
 3. 完成顺序 Tool 执行与 ToolResult 回灌。
 4. 落实单写者顺序状态机（并发能力不进入 Core 主语义）。
 

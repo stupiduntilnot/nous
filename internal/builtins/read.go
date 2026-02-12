@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 func NewReadTool(cwd string) core.Tool {

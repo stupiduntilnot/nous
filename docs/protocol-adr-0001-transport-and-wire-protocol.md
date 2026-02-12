@@ -12,6 +12,6 @@ The project needs a stable local IPC mechanism for a headless core and minimal T
 3. stdio transport is explicitly out of scope for current MVP.
 
 ## Consequences
-1. Clients connect through a socket path (e.g. `/tmp/pi-core.sock`).
+1. Clients connect through a socket path (e.g. `/tmp/nous-core.sock`).
 2. Message boundaries are newline-delimited; parsers read line-by-line.
 3. Future transports may be added later, but must preserve protocol semantics.

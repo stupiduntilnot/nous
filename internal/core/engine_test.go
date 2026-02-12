@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"oh-my-agent/internal/provider"
+	"nous/internal/provider"
 )
 
 func TestPromptWithFakeProvider(t *testing.T) {

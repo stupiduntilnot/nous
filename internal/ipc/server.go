@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/extension"
-	"oh-my-agent/internal/provider"
-	"oh-my-agent/internal/protocol"
-	"oh-my-agent/internal/session"
+	"nous/internal/core"
+	"nous/internal/extension"
+	"nous/internal/provider"
+	"nous/internal/protocol"
+	"nous/internal/session"
 )
 
 type Server struct {

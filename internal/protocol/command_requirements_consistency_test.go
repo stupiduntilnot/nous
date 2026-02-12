@@ -11,7 +11,7 @@ import (
 func TestCommandExamplesCoveredByCommandRequirements(t *testing.T) {
 	reqs := loadCommandRequirementsForTest(t)
 
-	f, err := os.Open(filepath.FromSlash("../../docs/protocol/examples/commands.ndjson"))
+	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-commands.ndjson"))
 	if err != nil {
 		t.Fatalf("open commands fixture failed: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCommandRequirementsHaveExamples(t *testing.T) {
 	reqs := loadCommandRequirementsForTest(t)
 	seen := map[string]struct{}{}
 
-	f, err := os.Open(filepath.FromSlash("../../docs/protocol/examples/commands.ndjson"))
+	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-commands.ndjson"))
 	if err != nil {
 		t.Fatalf("open commands fixture failed: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCommandRequirementsHaveExamples(t *testing.T) {
 
 func loadCommandRequirementsForTest(t *testing.T) map[string]struct{} {
 	t.Helper()
-	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol/openapi-like.json"))
+	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol-openapi-like.json"))
 	if err != nil {
 		t.Fatalf("read protocol spec failed: %v", err)
 	}

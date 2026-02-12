@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/provider"
+	"nous/internal/core"
+	"nous/internal/provider"
 )
 
 func TestWriteToolWritesFile(t *testing.T) {

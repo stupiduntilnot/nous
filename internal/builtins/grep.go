@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 func NewGrepTool(cwd string) core.Tool {

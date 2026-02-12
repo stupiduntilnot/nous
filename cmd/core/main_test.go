@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"oh-my-agent/internal/extension"
+	"nous/internal/extension"
 )
 
 func TestRegisterDemoExtension(t *testing.T) {

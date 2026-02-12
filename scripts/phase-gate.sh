@@ -25,15 +25,15 @@ require_test() {
 
 echo "[gate] verify protocol docs/artifacts"
 require_file docs/req.md
-require_file docs/dev.md
+require_file docs/dev-milestone1.md
 require_file .gitignore
 require_file Makefile
-require_file docs/protocol/openapi-like.json
-require_file docs/protocol/pi-mono-semantic-matrix.md
-require_file docs/protocol/examples/commands.ndjson
-require_file docs/protocol/examples/responses.ndjson
-require_file docs/protocol/examples/events_prompt_tool.ndjson
-require_file docs/protocol/examples/events_runtime_tool_sequence.ndjson
+require_file docs/protocol-openapi-like.json
+require_file docs/protocol-pi-mono-semantic-matrix.md
+require_file docs/example-protocol-commands.ndjson
+require_file docs/example-protocol-responses.ndjson
+require_file docs/example-protocol-events-prompt-tool.ndjson
+require_file docs/example-protocol-events-runtime-tool-sequence.ndjson
 require_file scripts/local-smoke.sh
 require_file scripts/session-smoke.sh
 require_file scripts/extension-smoke.sh
@@ -42,8 +42,8 @@ require_file scripts/tui-smoke.sh
 require_file scripts/tui-evidence.sh
 require_file scripts/smoke.sh
 require_file scripts/pingpong.sh
-rg -q 'UDS \+ NDJSON' docs/req.md docs/dev.md
-rg -q '^artifacts/\*\.log$' .gitignore
+rg -q 'UDS \+ NDJSON' docs/req.md docs/dev-milestone1.md
+rg -q '^artifacts/\*\*|^artifacts/\*\.log$' .gitignore
 rg -q '^e2e-tui-evidence:' Makefile
 rg -q 'scripts/tui-evidence\.sh' Makefile
 rg -q '^release-gate:' Makefile

@@ -7,7 +7,7 @@ import (
 )
 
 func TestProtocolADRExistsAndContainsDecisions(t *testing.T) {
-	b, err := os.ReadFile("../../docs/adr/0001-transport-and-wire-protocol.md")
+	b, err := os.ReadFile("../../docs/protocol-adr-0001-transport-and-wire-protocol.md")
 	if err != nil {
 		t.Fatalf("failed to read ADR: %v", err)
 	}

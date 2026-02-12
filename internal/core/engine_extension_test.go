@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"oh-my-agent/internal/extension"
-	"oh-my-agent/internal/provider"
+	"nous/internal/extension"
+	"nous/internal/provider"
 )
 
 type capturePromptProvider struct {

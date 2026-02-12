@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/extension"
-	"oh-my-agent/internal/provider"
-	"oh-my-agent/internal/protocol"
-	"oh-my-agent/internal/session"
+	"nous/internal/core"
+	"nous/internal/extension"
+	"nous/internal/provider"
+	"nous/internal/protocol"
+	"nous/internal/session"
 )
 
 func TestDispatchResponsesSatisfySpecPayloadRequirements(t *testing.T) {
@@ -93,7 +93,7 @@ func TestDispatchResponsesSatisfySpecPayloadRequirements(t *testing.T) {
 
 func loadResponsePayloadRequirements(t *testing.T) map[string][]string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol/openapi-like.json"))
+	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol-openapi-like.json"))
 	if err != nil {
 		t.Fatalf("read protocol spec failed: %v", err)
 	}

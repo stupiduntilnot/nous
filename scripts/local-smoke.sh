@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOCKET="${1:-/tmp/pi-core-local.sock}"
+SOCKET="${1:-/tmp/nous-core-local.sock}"
 MODEL="${MODEL:-gpt-4o-mini}"
 API_BASE="${API_BASE:-https://api.openai.com/v1}"
 API_KEY="${OPENAI_API_KEY:-}"
@@ -26,7 +26,7 @@ OPENAI_API_KEY="$API_KEY" go run ./cmd/core \
   --socket "$SOCKET" \
   --provider openai \
   --model "$MODEL" \
-  --api-base "$API_BASE" >/tmp/pi-core-local.log 2>&1 &
+  --api-base "$API_BASE" >/tmp/nous-core-local.log 2>&1 &
 CORE_PID=$!
 
 for _ in {1..200}; do

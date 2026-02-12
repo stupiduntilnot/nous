@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"oh-my-agent/internal/provider"
+	"nous/internal/provider"
 )
 
 type providerErrorAdapter struct{}

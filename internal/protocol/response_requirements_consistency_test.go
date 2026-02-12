@@ -11,7 +11,7 @@ import (
 func TestResponseExamplesCoveredByResponseRequirements(t *testing.T) {
 	reqs := loadResponseRequirementsForTest(t)
 
-	f, err := os.Open(filepath.FromSlash("../../docs/protocol/examples/responses.ndjson"))
+	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-responses.ndjson"))
 	if err != nil {
 		t.Fatalf("open responses fixture failed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestResponseRequirementsHaveSuccessExamples(t *testing.T) {
 	reqs := loadResponseRequirementsForTest(t)
 	seen := make(map[string]struct{}, len(reqs))
 
-	f, err := os.Open(filepath.FromSlash("../../docs/protocol/examples/responses.ndjson"))
+	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-responses.ndjson"))
 	if err != nil {
 		t.Fatalf("open responses fixture failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestResponseRequirementsHaveSuccessExamples(t *testing.T) {
 
 func loadResponseRequirementsForTest(t *testing.T) map[string]struct{} {
 	t.Helper()
-	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol/openapi-like.json"))
+	b, err := os.ReadFile(filepath.FromSlash("../../docs/protocol-openapi-like.json"))
 	if err != nil {
 		t.Fatalf("read protocol spec failed: %v", err)
 	}

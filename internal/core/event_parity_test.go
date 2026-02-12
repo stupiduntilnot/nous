@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	iproto "oh-my-agent/internal/protocol"
+	iproto "nous/internal/protocol"
 )
 
 func TestCoreEventTypesParityWithProtocol(t *testing.T) {

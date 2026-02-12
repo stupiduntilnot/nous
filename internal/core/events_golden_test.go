@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"oh-my-agent/internal/provider"
+	"nous/internal/provider"
 )
 
 type textOnlyProvider struct{}

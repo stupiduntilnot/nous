@@ -9,18 +9,18 @@ import (
 	"strings"
 	"time"
 
-	"oh-my-agent/internal/ipc"
-	"oh-my-agent/internal/protocol"
+	"nous/internal/ipc"
+	"nous/internal/protocol"
 )
 
 func main() {
-	socket := "/tmp/pi-core.sock"
+	socket := "/tmp/nous-core.sock"
 	if len(os.Args) > 1 {
 		socket = os.Args[1]
 	}
 	activeSession := ""
 
-	fmt.Println("oh-my-agent tui mvp")
+	fmt.Println("nous tui mvp")
 	fmt.Printf("socket: %s\n", socket)
 	printStatus(socket, activeSession)
 	printHelp()

@@ -9,7 +9,7 @@ import (
 )
 
 func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
-	path := filepath.FromSlash("../../docs/protocol/examples/commands.ndjson")
+	path := filepath.FromSlash("../../docs/example-protocol-commands.ndjson")
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open commands example failed: %v", err)
@@ -65,7 +65,7 @@ func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
 }
 
 func TestProtocolExamplesResponsesNDJSON(t *testing.T) {
-	path := filepath.FromSlash("../../docs/protocol/examples/responses.ndjson")
+	path := filepath.FromSlash("../../docs/example-protocol-responses.ndjson")
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open responses example failed: %v", err)
@@ -136,8 +136,8 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 
 func TestProtocolExamplesEventsNDJSON(t *testing.T) {
 	for _, path := range []string{
-		"../../docs/protocol/examples/events_prompt_tool.ndjson",
-		"../../docs/protocol/examples/events_runtime_tool_sequence.ndjson",
+		"../../docs/example-protocol-events-prompt-tool.ndjson",
+		"../../docs/example-protocol-events-runtime-tool-sequence.ndjson",
 	} {
 		f, err := os.Open(filepath.FromSlash(path))
 		if err != nil {

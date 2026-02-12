@@ -4,7 +4,7 @@ This table tracks semantic compatibility targets against `pi-mono` runtime behav
 
 ## Commands
 
-| Semantic | pi-mono | oh-my-agent target | Status |
+| Semantic | pi-mono | nous target | Status |
 |---|---|---|---|
 | `prompt` starts/continues an agent run | yes | same | aligned |
 | `steer` injects mid-run user intent | yes | same | aligned |
@@ -18,7 +18,7 @@ This table tracks semantic compatibility targets against `pi-mono` runtime behav
 
 ## Event Lifecycle
 
-| Semantic | pi-mono | oh-my-agent target | Status |
+| Semantic | pi-mono | nous target | Status |
 |---|---|---|---|
 | agent lifecycle (`agent_start/end`) | yes | same | aligned |
 | turn lifecycle (`turn_start/end`) | yes | same | aligned |

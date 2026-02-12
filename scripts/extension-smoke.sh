@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOCKET="${1:-/tmp/pi-core-extension.sock}"
+SOCKET="${1:-/tmp/nous-core-extension.sock}"
 rm -f "$SOCKET"
 
 cleanup() {
@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-go run ./cmd/core --socket "$SOCKET" --enable-demo-extension >/tmp/pi-core-extension.log 2>&1 &
+go run ./cmd/core --socket "$SOCKET" --enable-demo-extension >/tmp/nous-core-extension.log 2>&1 &
 CORE_PID=$!
 
 for _ in {1..200}; do
@@ -33,13 +33,13 @@ echo "$OUT" | rg -q '"echo": "hello"' || {
   exit 1
 }
 
-if go run ./cmd/corectl --socket "$SOCKET" ext unknown >/tmp/pi-core-extension-missing.log 2>&1; then
+if go run ./cmd/corectl --socket "$SOCKET" ext unknown >/tmp/nous-core-extension-missing.log 2>&1; then
   echo "expected missing extension command to fail" >&2
   exit 1
 fi
-rg -q "extension_command_not_found" /tmp/pi-core-extension-missing.log || {
+rg -q "extension_command_not_found" /tmp/nous-core-extension-missing.log || {
   echo "missing expected error marker for unknown extension command" >&2
-  cat /tmp/pi-core-extension-missing.log >&2 || true
+  cat /tmp/nous-core-extension-missing.log >&2 || true
   exit 1
 }
 

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"oh-my-agent/internal/core"
+	"nous/internal/core"
 )
 
 func NewWriteTool(cwd string) core.Tool {

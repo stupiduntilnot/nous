@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"oh-my-agent/internal/core"
-	"oh-my-agent/internal/provider"
+	"nous/internal/core"
+	"nous/internal/provider"
 )
 
 func TestBashToolExecutesCommand(t *testing.T) {

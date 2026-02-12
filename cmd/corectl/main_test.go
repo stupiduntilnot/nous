@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"oh-my-agent/internal/protocol"
+	"nous/internal/protocol"
 )
 
 func TestParseArgs(t *testing.T) {
