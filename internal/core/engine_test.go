@@ -12,6 +12,19 @@ type captureRequestProvider struct {
 	last provider.Request
 }
 
+type multiDeltaProvider struct{}
+
+func (multiDeltaProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 5)
+	out <- provider.Event{Type: provider.EventStart}
+	out <- provider.Event{Type: provider.EventTextDelta, Delta: "hello "}
+	out <- provider.Event{Type: provider.EventTextDelta, Delta: "world"}
+	out <- provider.Event{Type: provider.EventTextDelta, Delta: "!"}
+	out <- provider.Event{Type: provider.EventDone}
+	close(out)
+	return out
+}
+
 func (c *captureRequestProvider) Stream(_ context.Context, req provider.Request) <-chan provider.Event {
 	c.last = req
 	out := make(chan provider.Event, 2)
@@ -130,5 +143,34 @@ func TestPromptFallbackRendersUnsupportedBlocks(t *testing.T) {
 	last := p.last.Messages[len(p.last.Messages)-1]
 	if last.Content != "fallback-text" {
 		t.Fatalf("expected fallback block rendering, got: %+v", last)
+	}
+}
+
+func TestPromptStreamsMultipleDeltasIntoMessageUpdates(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, multiDeltaProvider{})
+
+	updates := make([]string, 0, 4)
+	r.Subscribe(func(ev Event) {
+		if ev.Type == EventMessageUpdate {
+			updates = append(updates, ev.Delta)
+		}
+	})
+
+	out, err := e.Prompt(context.Background(), "run-stream-multi", "hello")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if out != "hello world!" {
+		t.Fatalf("unexpected prompt output: %q", out)
+	}
+	want := []string{"hello ", "world", "!"}
+	if len(updates) != len(want) {
+		t.Fatalf("unexpected update count: got=%d want=%d updates=%v", len(updates), len(want), updates)
+	}
+	for i := range want {
+		if updates[i] != want[i] {
+			t.Fatalf("unexpected update at %d: got=%q want=%q", i, updates[i], want[i])
+		}
 	}
 }

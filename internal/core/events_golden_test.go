@@ -23,6 +23,21 @@ func (textOnlyProvider) Stream(_ context.Context, _ provider.Request) <-chan pro
 	return out
 }
 
+type streamingTextProvider struct{}
+
+func (streamingTextProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "hello "}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "stream"}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: " world"}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
 func TestEventSequenceGoldenPromptBasic(t *testing.T) {
 	e := NewEngine(NewRuntime(), textOnlyProvider{})
 	types := make([]string, 0, 8)
@@ -59,6 +74,21 @@ func TestEventSequenceGoldenToolCall(t *testing.T) {
 	}
 
 	assertEventGolden(t, "prompt_tool.events", strings.Join(types, "\n")+"\n")
+}
+
+func TestEventSequenceGoldenStreamingPrompt(t *testing.T) {
+	e := NewEngine(NewRuntime(), streamingTextProvider{})
+	types := make([]string, 0, 12)
+	unsub := e.Subscribe(func(ev Event) {
+		types = append(types, string(ev.Type))
+	})
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-golden-stream", "stream"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+
+	assertEventGolden(t, "prompt_streaming.events", strings.Join(types, "\n")+"\n")
 }
 
 func assertEventGolden(t *testing.T, name, got string) {

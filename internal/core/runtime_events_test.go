@@ -56,3 +56,34 @@ func TestMessageEventOrderingInvalid(t *testing.T) {
 		t.Fatalf("expected message_end to fail while idle")
 	}
 }
+
+func TestMessageEventOrderingAllowsMultipleUpdates(t *testing.T) {
+	r := NewRuntime()
+	updates := 0
+	r.Subscribe(func(ev Event) {
+		if ev.Type == EventMessageUpdate {
+			updates++
+		}
+	})
+
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	must(r.StartRun("run-1"))
+	must(r.StartTurn())
+	must(r.MessageStart("m-1", "assistant"))
+	must(r.MessageUpdate("m-1", "a"))
+	must(r.MessageUpdate("m-1", "b"))
+	must(r.MessageUpdate("m-1", "c"))
+	must(r.MessageEnd("m-1"))
+	must(r.EndTurn())
+	must(r.EndRun())
+
+	if updates != 3 {
+		t.Fatalf("expected 3 message_update events, got %d", updates)
+	}
+}
