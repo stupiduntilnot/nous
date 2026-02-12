@@ -47,7 +47,7 @@ func TestProtocolExamplesCommandsNDJSON(t *testing.T) {
 func assertCommandPayloadSemantics(t *testing.T, env Envelope, line int) {
 	t.Helper()
 	switch CommandType(env.Type) {
-	case CmdPing, CmdAbort, CmdNewSession:
+	case CmdPing, CmdAbort, CmdNewSession, CmdGetState, CmdGetMessages:
 		return
 	case CmdPrompt, CmdSteer, CmdFollowUp:
 		if text, _ := env.Payload["text"].(string); text == "" {
@@ -156,6 +156,32 @@ func assertResponsePayloadSemantics(t *testing.T, resp ResponseEnvelope, line in
 		}
 		if _, ok := resp.Payload["active"].(bool); !ok {
 			t.Fatalf("response line %d session payload requires active boolean", line)
+		}
+	case "state":
+		if _, ok := resp.Payload["run_state"].(string); !ok {
+			t.Fatalf("response line %d state payload requires run_state", line)
+		}
+		if _, ok := resp.Payload["run_id"].(string); !ok {
+			t.Fatalf("response line %d state payload requires run_id", line)
+		}
+		if _, ok := resp.Payload["session_id"].(string); !ok {
+			t.Fatalf("response line %d state payload requires session_id", line)
+		}
+		if _, ok := resp.Payload["steering_mode"].(string); !ok {
+			t.Fatalf("response line %d state payload requires steering_mode", line)
+		}
+		if _, ok := resp.Payload["follow_up_mode"].(string); !ok {
+			t.Fatalf("response line %d state payload requires follow_up_mode", line)
+		}
+		if _, ok := resp.Payload["pending_counts"].(map[string]any); !ok {
+			t.Fatalf("response line %d state payload requires pending_counts object", line)
+		}
+	case "messages":
+		if _, ok := resp.Payload["session_id"].(string); !ok {
+			t.Fatalf("response line %d messages payload requires session_id", line)
+		}
+		if _, ok := resp.Payload["messages"].([]any); !ok {
+			t.Fatalf("response line %d messages payload requires messages array", line)
 		}
 	default:
 		// keep examples permissive for other success envelopes (session/extension_result)

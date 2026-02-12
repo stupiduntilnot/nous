@@ -6,6 +6,8 @@
 {"v":"1","id":"cmd-5","type":"set_active_tools","payload":{"tools":["demo.echo"]}}
 {"v":"1","id":"cmd-6","type":"set_steering_mode","payload":{"mode":"all"}}
 {"v":"1","id":"cmd-7","type":"set_follow_up_mode","payload":{"mode":"one-at-a-time"}}
+{"v":"1","id":"cmd-7b","type":"get_state","payload":{}}
+{"v":"1","id":"cmd-7c","type":"get_messages","payload":{}}
 {"v":"1","id":"cmd-8","type":"new_session","payload":{}}
 {"v":"1","id":"cmd-9","type":"switch_session","payload":{"session_id":"sess-123"}}
 {"v":"1","id":"cmd-10","type":"branch_session","payload":{"session_id":"sess-123"}}

@@ -20,6 +20,8 @@ const (
 	CmdSetActiveTools  CommandType = "set_active_tools"
 	CmdSetSteeringMode CommandType = "set_steering_mode"
 	CmdSetFollowUpMode CommandType = "set_follow_up_mode"
+	CmdGetState        CommandType = "get_state"
+	CmdGetMessages     CommandType = "get_messages"
 	CmdNewSession      CommandType = "new_session"
 	CmdSwitchSession   CommandType = "switch_session"
 	CmdBranchSession   CommandType = "branch_session"
@@ -72,6 +74,8 @@ var validCommands = map[CommandType]struct{}{
 	CmdSetActiveTools:  {},
 	CmdSetSteeringMode: {},
 	CmdSetFollowUpMode: {},
+	CmdGetState:        {},
+	CmdGetMessages:     {},
 	CmdNewSession:      {},
 	CmdSwitchSession:   {},
 	CmdBranchSession:   {},

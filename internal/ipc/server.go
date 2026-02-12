@@ -437,6 +437,65 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			Type:    "accepted",
 			Payload: map[string]any{"command": "set_follow_up_mode", "mode": mode},
 		})
+	case protocol.CmdGetState:
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "state",
+			Payload: s.statePayload(),
+		})
+	case protocol.CmdGetMessages:
+		sessionID, _ := env.Payload["session_id"].(string)
+		if sessionID == "" && s.sessions != nil {
+			sessionID = s.sessions.ActiveSession()
+		}
+		leafID, _ := env.Payload["leaf_id"].(string)
+		if sessionID == "" {
+			payload := map[string]any{
+				"session_id": "",
+				"messages":   []session.MessageEntry{},
+			}
+			if leafID != "" {
+				payload["leaf_id"] = leafID
+			}
+			return responseOK(protocol.Envelope{
+				V:       protocol.Version,
+				ID:      env.ID,
+				Type:    "messages",
+				Payload: payload,
+			})
+		}
+		if s.sessions == nil {
+			return responseErr(env.ID, "session_error", "session_manager_not_ready")
+		}
+		var (
+			entries []session.MessageEntry
+			err     error
+		)
+		if leafID != "" {
+			entries, err = s.sessions.BuildMessageContextFromLeaf(sessionID, leafID)
+		} else {
+			entries, err = s.sessions.BuildMessageContext(sessionID)
+		}
+		if err != nil {
+			if os.IsNotExist(err) {
+				return responseErr(env.ID, "session_not_found", err.Error())
+			}
+			return responseErr(env.ID, "session_error", err.Error())
+		}
+		payload := map[string]any{
+			"session_id": sessionID,
+			"messages":   entries,
+		}
+		if leafID != "" {
+			payload["leaf_id"] = leafID
+		}
+		return responseOK(protocol.Envelope{
+			V:       protocol.Version,
+			ID:      env.ID,
+			Type:    "messages",
+			Payload: payload,
+		})
 	case protocol.CmdExtensionCmd:
 		name, ok := env.Payload["name"].(string)
 		if !ok || name == "" {
@@ -715,6 +774,40 @@ func (s *Server) extensionManager() *extension.Manager {
 		return nil
 	}
 	return s.engine.ExtensionManager()
+}
+
+func (s *Server) statePayload() map[string]any {
+	runState := string(core.StateIdle)
+	runID := ""
+	steeringMode := string(core.QueueModeOneAtATime)
+	followUpMode := string(core.QueueModeOneAtATime)
+	pendingSteers := 0
+	pendingFollowUps := 0
+
+	if s.loop != nil {
+		runState = string(s.loop.State())
+		runID = s.loop.CurrentRunID()
+		steeringMode = string(s.loop.SteeringMode())
+		followUpMode = string(s.loop.FollowUpMode())
+		pendingSteers, pendingFollowUps = s.loop.PendingCounts()
+	}
+
+	sessionID := ""
+	if s.sessions != nil {
+		sessionID = s.sessions.ActiveSession()
+	}
+
+	return map[string]any{
+		"run_state":      runState,
+		"run_id":         runID,
+		"session_id":     sessionID,
+		"steering_mode":  steeringMode,
+		"follow_up_mode": followUpMode,
+		"pending_counts": map[string]any{
+			"steer":     pendingSteers,
+			"follow_up": pendingFollowUps,
+		},
+	}
 }
 
 func (s *Server) setActiveRunSession(runID, sessionID string) {

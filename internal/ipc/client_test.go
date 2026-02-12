@@ -1272,6 +1272,173 @@ func TestAsyncPromptRunControlHonorsQueueModeAllOverIPC(t *testing.T) {
 	}
 }
 
+func TestGetStateReportsQueueModesAndPendingCountsOverIPC(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	exec := newOrderedExecutor()
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(exec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	for _, tc := range []protocol.Envelope{
+		{ID: "gs-mode-steer", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "all"}},
+		{ID: "gs-mode-follow", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": "all"}},
+	} {
+		resp, err := SendCommand(socket, tc)
+		if err != nil || !resp.OK {
+			t.Fatalf("failed to set queue mode: resp=%+v err=%v", resp, err)
+		}
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gs-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("prompt wait=false failed: resp=%+v err=%v", promptResp, err)
+	}
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("missing run_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("prompt turn did not start")
+	}
+
+	for _, tc := range []protocol.Envelope{
+		{ID: "gs-steer", Type: string(protocol.CmdSteer), Payload: map[string]any{"text": "s1"}},
+		{ID: "gs-follow", Type: string(protocol.CmdFollowUp), Payload: map[string]any{"text": "f1"}},
+	} {
+		resp, err := SendCommand(socket, tc)
+		if err != nil || !resp.OK {
+			t.Fatalf("failed to queue mid-run command: resp=%+v err=%v", resp, err)
+		}
+	}
+
+	stateResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gs-read",
+		Type:    string(protocol.CmdGetState),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("get_state failed: %v", err)
+	}
+	if !stateResp.OK || stateResp.Type != "state" {
+		t.Fatalf("unexpected get_state response: %+v", stateResp)
+	}
+	if got, _ := stateResp.Payload["run_state"].(string); got != string(core.StateRunning) {
+		t.Fatalf("unexpected run_state: got=%q payload=%+v", got, stateResp.Payload)
+	}
+	if got, _ := stateResp.Payload["run_id"].(string); got != runID {
+		t.Fatalf("unexpected run_id: got=%q want=%q payload=%+v", got, runID, stateResp.Payload)
+	}
+	if got, _ := stateResp.Payload["session_id"].(string); got == "" {
+		t.Fatalf("missing session_id in get_state payload: %+v", stateResp.Payload)
+	}
+	if got, _ := stateResp.Payload["steering_mode"].(string); got != "all" {
+		t.Fatalf("unexpected steering_mode: got=%q payload=%+v", got, stateResp.Payload)
+	}
+	if got, _ := stateResp.Payload["follow_up_mode"].(string); got != "all" {
+		t.Fatalf("unexpected follow_up_mode: got=%q payload=%+v", got, stateResp.Payload)
+	}
+	pending, ok := stateResp.Payload["pending_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("pending_counts missing or invalid: %+v", stateResp.Payload)
+	}
+	if got, _ := pending["steer"].(float64); got != 1 {
+		t.Fatalf("unexpected pending steer count: got=%v payload=%+v", got, stateResp.Payload)
+	}
+	if got, _ := pending["follow_up"].(float64); got != 1 {
+		t.Fatalf("unexpected pending follow_up count: got=%v payload=%+v", got, stateResp.Payload)
+	}
+
+	for range 3 {
+		exec.release <- struct{}{}
+	}
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestGetMessagesReturnsSessionHistoryOverIPC(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gm-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello from get_messages", "wait": true},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("prompt wait=true failed: resp=%+v err=%v", promptResp, err)
+	}
+	sessionID, _ := promptResp.Payload["session_id"].(string)
+	if sessionID == "" {
+		t.Fatalf("missing session_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	messagesResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "gm-read",
+		Type:    string(protocol.CmdGetMessages),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("get_messages failed: %v", err)
+	}
+	if !messagesResp.OK || messagesResp.Type != "messages" {
+		t.Fatalf("unexpected get_messages response: %+v", messagesResp)
+	}
+	if got, _ := messagesResp.Payload["session_id"].(string); got != sessionID {
+		t.Fatalf("unexpected session_id: got=%q want=%q payload=%+v", got, sessionID, messagesResp.Payload)
+	}
+	rawMessages, ok := messagesResp.Payload["messages"].([]any)
+	if !ok || len(rawMessages) < 2 {
+		t.Fatalf("expected at least 2 messages, got %+v", messagesResp.Payload["messages"])
+	}
+
+	first, ok := rawMessages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected first message shape: %+v", rawMessages[0])
+	}
+	if got, _ := first["role"].(string); got != "user" {
+		t.Fatalf("unexpected first message role: got=%q message=%+v", got, first)
+	}
+	if got, _ := first["text"].(string); got != "hello from get_messages" {
+		t.Fatalf("unexpected first message text: got=%q message=%+v", got, first)
+	}
+	if got, _ := first["id"].(string); got == "" {
+		t.Fatalf("expected first message id to be present: %+v", first)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestAsyncPromptPersistsToOriginalSessionWhenSwitchingMidRun(t *testing.T) {
 	base := testWorkDir(t)
 	socket := filepath.Join(base, "core.sock")

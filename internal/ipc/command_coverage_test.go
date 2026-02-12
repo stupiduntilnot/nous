@@ -39,6 +39,8 @@ func TestDispatchDoesNotReturnNotImplementedForKnownCommands(t *testing.T) {
 		{ID: "c-tools", Type: string(protocol.CmdSetActiveTools), Payload: map[string]any{"tools": []any{}}},
 		{ID: "c-steer-mode", Type: string(protocol.CmdSetSteeringMode), Payload: map[string]any{"mode": "all"}},
 		{ID: "c-follow-mode", Type: string(protocol.CmdSetFollowUpMode), Payload: map[string]any{"mode": "all"}},
+		{ID: "c-get-state", Type: string(protocol.CmdGetState), Payload: map[string]any{}},
+		{ID: "c-get-msgs", Type: string(protocol.CmdGetMessages), Payload: map[string]any{}},
 		{ID: "c-new", Type: string(protocol.CmdNewSession), Payload: map[string]any{}},
 		{ID: "c-switch", Type: string(protocol.CmdSwitchSession), Payload: map[string]any{"session_id": parentID}},
 		{ID: "c-branch", Type: string(protocol.CmdBranchSession), Payload: map[string]any{"session_id": parentID}},

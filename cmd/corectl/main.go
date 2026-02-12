@@ -102,6 +102,20 @@ func parseArgs(args []string) (cmd string, payload map[string]any, err error) {
 			return "", nil, fmt.Errorf("set_follow_up_mode requires mode (one-at-a-time|all)")
 		}
 		return string(protocol.CmdSetFollowUpMode), map[string]any{"mode": args[1]}, nil
+	case "get_state":
+		if len(args) != 1 {
+			return "", nil, fmt.Errorf("get_state does not take arguments")
+		}
+		return string(protocol.CmdGetState), map[string]any{}, nil
+	case "get_messages":
+		if len(args) > 2 {
+			return "", nil, fmt.Errorf("get_messages takes at most one optional session id")
+		}
+		payload := map[string]any{}
+		if len(args) == 2 {
+			payload["session_id"] = args[1]
+		}
+		return string(protocol.CmdGetMessages), payload, nil
 	case "ext":
 		if len(args) < 2 {
 			return "", nil, fmt.Errorf("ext requires command name")
@@ -146,6 +160,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  set_active_tools [tool...]   (no args = clear all)")
 	fmt.Fprintln(os.Stderr, "  set_steering_mode <one-at-a-time|all>")
 	fmt.Fprintln(os.Stderr, "  set_follow_up_mode <one-at-a-time|all>")
+	fmt.Fprintln(os.Stderr, "  get_state")
+	fmt.Fprintln(os.Stderr, "  get_messages [session_id]")
 	fmt.Fprintln(os.Stderr, "  ext <name> [json_payload]")
 }
 
