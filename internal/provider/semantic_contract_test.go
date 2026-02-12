@@ -95,7 +95,7 @@ func assertKnownEventTypes(t *testing.T, evs []Event) {
 	t.Helper()
 	for i, ev := range evs {
 		switch ev.Type {
-		case EventStart, EventTextDelta, EventToolCall, EventAwaitNext, EventDone, EventError:
+		case EventStart, EventTextDelta, EventToolCall, EventAwaitNext, EventStatus, EventWarning, EventDone, EventError:
 		default:
 			t.Fatalf("unknown event type at %d: %+v", i, ev)
 		}

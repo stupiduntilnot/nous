@@ -45,6 +45,92 @@ func TestOpenAIAdapterStream(t *testing.T) {
 	}
 }
 
+func TestOpenAIAdapterRetriesRetryableHTTPThenSucceeds(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"try later"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "recovered"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}))
+	if attempts != 2 {
+		t.Fatalf("expected one retry attempt, got attempts=%d", attempts)
+	}
+	foundRetryWarning := false
+	foundText := false
+	for _, ev := range evs {
+		if ev.Type == EventWarning && ev.Code == "provider_retry" {
+			foundRetryWarning = true
+		}
+		if ev.Type == EventTextDelta && ev.Delta == "recovered" {
+			foundText = true
+		}
+	}
+	if !foundRetryWarning || !foundText {
+		t.Fatalf("expected retry warning and recovered text, got events=%+v", evs)
+	}
+}
+
+func TestOpenAIAdapterRetryExhaustedReturnsTypedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = w.Write([]byte(`{"error":"timeout"}`))
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}))
+	last := evs[len(evs)-1]
+	if last.Type != EventError {
+		t.Fatalf("expected final error event, got %+v", last)
+	}
+	if !IsRetryExhaustedError(last.Err) {
+		t.Fatalf("expected retry-exhausted error type, got %+v", last.Err)
+	}
+}
+
+func TestOpenAIAdapterAbortReturnsTypedError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", "http://127.0.0.1:9")
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(ctx, Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}))
+	last := evs[len(evs)-1]
+	if last.Type != EventError {
+		t.Fatalf("expected final error event, got %+v", last)
+	}
+	if !IsAbortedError(last.Err) {
+		t.Fatalf("expected aborted error type, got %+v", last.Err)
+	}
+}
+
 func TestOpenAIAdapterToolCalls(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

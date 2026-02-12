@@ -46,6 +46,27 @@ func (providerDoneMetadataAdapter) Stream(_ context.Context, _ provider.Request)
 	return out
 }
 
+type providerRetryWarningAdapter struct{}
+
+func (providerRetryWarningAdapter) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 4)
+	out <- provider.Event{Type: provider.EventStart}
+	out <- provider.Event{Type: provider.EventWarning, Code: "provider_retry", Message: "retry 1/3"}
+	out <- provider.Event{Type: provider.EventTextDelta, Delta: "ok"}
+	out <- provider.Event{Type: provider.EventDone, StopReason: provider.StopReasonStop}
+	close(out)
+	return out
+}
+
+type providerAbortedAdapter struct{}
+
+func (providerAbortedAdapter) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 1)
+	out <- provider.Event{Type: provider.EventError, Err: provider.NewAbortedError("request_aborted", context.Canceled)}
+	close(out)
+	return out
+}
+
 func TestPromptEmitsErrorEventOnProviderError(t *testing.T) {
 	e := NewEngine(NewRuntime(), providerErrorAdapter{})
 	events := make([]Event, 0, 8)
@@ -122,5 +143,55 @@ func TestPromptEmitsStatusEventsForProviderDoneMetadata(t *testing.T) {
 	}
 	if !foundStop || !foundUsage {
 		t.Fatalf("expected provider done metadata status events, got: %+v", events)
+	}
+}
+
+func TestPromptEmitsWarningEventOnProviderRetryTelemetry(t *testing.T) {
+	e := NewEngine(NewRuntime(), providerRetryWarningAdapter{})
+	events := make([]Event, 0, 8)
+	unsub := e.Subscribe(func(ev Event) { events = append(events, ev) })
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-provider-retry-warning", "hello"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventWarning && ev.Code == "provider_retry" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected provider_retry warning event, got: %+v", events)
+	}
+}
+
+func TestPromptNormalizesAbortedProviderErrorAsWarning(t *testing.T) {
+	e := NewEngine(NewRuntime(), providerAbortedAdapter{})
+	events := make([]Event, 0, 8)
+	unsub := e.Subscribe(func(ev Event) { events = append(events, ev) })
+	defer unsub()
+
+	if _, err := e.Prompt(context.Background(), "run-provider-aborted", "hello"); err == nil {
+		t.Fatalf("expected aborted error")
+	}
+
+	foundAbortWarning := false
+	foundProviderError := false
+	for _, ev := range events {
+		if ev.Type == EventWarning && ev.Code == "provider_aborted" {
+			foundAbortWarning = true
+		}
+		if ev.Type == EventError && ev.Code == "provider_error" {
+			foundProviderError = true
+		}
+	}
+	if !foundAbortWarning {
+		t.Fatalf("expected provider_aborted warning, got: %+v", events)
+	}
+	if foundProviderError {
+		t.Fatalf("expected aborted path to avoid provider_error event, got: %+v", events)
 	}
 }

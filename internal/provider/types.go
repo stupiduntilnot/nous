@@ -9,6 +9,8 @@ const (
 	EventTextDelta EventType = "text_delta"
 	EventToolCall  EventType = "tool_call"
 	EventAwaitNext EventType = "await_next_turn"
+	EventStatus    EventType = "status"
+	EventWarning   EventType = "warning"
 	EventDone      EventType = "done"
 	EventError     EventType = "error"
 )
@@ -62,6 +64,8 @@ type Event struct {
 	ToolCall   ToolCall
 	StopReason StopReason
 	Usage      *Usage
+	Code       string
+	Message    string
 	Err        error
 }
 

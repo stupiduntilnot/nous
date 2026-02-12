@@ -273,8 +273,33 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 						ev.Usage.TotalTokens,
 					))
 				}
+			case provider.EventStatus:
+				if strings.TrimSpace(ev.Message) != "" {
+					e.runtime.Status(strings.TrimSpace(ev.Message))
+				}
+			case provider.EventWarning:
+				code := strings.TrimSpace(ev.Code)
+				if code == "" {
+					code = "provider_warning"
+				}
+				message := strings.TrimSpace(ev.Message)
+				if message == "" {
+					message = code
+				}
+				e.runtime.Warning(code, message)
 			case provider.EventError:
 				if ev.Err != nil {
+					if provider.IsAbortedError(ev.Err) || errors.Is(ev.Err, context.Canceled) || errors.Is(ev.Err, context.DeadlineExceeded) {
+						reason := strings.TrimSpace(provider.AbortReason(ev.Err))
+						if reason == "" {
+							reason = "provider request aborted"
+						}
+						e.runtime.Warning("provider_aborted", reason)
+						return "", ev.Err
+					}
+					if provider.IsRetryExhaustedError(ev.Err) {
+						e.runtime.Warning("provider_retry_exhausted", ev.Err.Error())
+					}
 					e.runtime.Error("provider_error", "provider stream returned error", ev.Err)
 					return "", ev.Err
 				}

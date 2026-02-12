@@ -390,6 +390,109 @@ done:
 	}
 }
 
+type retryThenSuccessProvider struct{}
+
+func (retryThenSuccessProvider) Stream(_ context.Context, _ provider.Request) <-chan provider.Event {
+	out := make(chan provider.Event, 5)
+	go func() {
+		defer close(out)
+		out <- provider.Event{Type: provider.EventStart}
+		out <- provider.Event{Type: provider.EventWarning, Code: "provider_retry", Message: "openai retry attempt 1/3"}
+		out <- provider.Event{Type: provider.EventTextDelta, Delta: "ok-after-retry"}
+		out <- provider.Event{Type: provider.EventDone}
+	}()
+	return out
+}
+
+func TestEventStreamPreservesOrderUnderRetryThenSuccess(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	engine := core.NewEngine(core.NewRuntime(), retryThenSuccessProvider{})
+	engine.SetExtensionManager(extension.NewManager())
+	srv.SetEngine(engine, core.NewCommandLoop(engine))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server command socket not ready: %v", err)
+	}
+	if err := waitForSocket(socket+".events", 2*time.Second); err != nil {
+		t.Fatalf("server event socket not ready: %v", err)
+	}
+
+	eventConn, err := net.Dial("unix", socket+".events")
+	if err != nil {
+		t.Fatalf("event stream dial failed: %v", err)
+	}
+	defer eventConn.Close()
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "retry-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "hello", "wait": false},
+	})
+	if err != nil || !promptResp.OK {
+		t.Fatalf("async prompt failed: resp=%+v err=%v", promptResp, err)
+	}
+	runID, _ := promptResp.Payload["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("missing run_id in prompt response: %+v", promptResp.Payload)
+	}
+
+	reader := bufio.NewReader(eventConn)
+	retryWarningIdx := -1
+	messageUpdateIdx := -1
+	eventIndex := 0
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = eventConn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			t.Fatalf("read event failed: %v", err)
+		}
+		var env protocol.Envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			t.Fatalf("decode event failed: %v", err)
+		}
+		if gotRunID, _ := env.Payload["run_id"].(string); gotRunID != runID {
+			continue
+		}
+		if env.Type == string(protocol.EvWarning) {
+			if code, _ := env.Payload["code"].(string); code == "provider_retry" && retryWarningIdx == -1 {
+				retryWarningIdx = eventIndex
+			}
+		}
+		if env.Type == string(protocol.EvMessageUpdate) && messageUpdateIdx == -1 {
+			messageUpdateIdx = eventIndex
+		}
+		if env.Type == string(protocol.EvAgentEnd) {
+			break
+		}
+		eventIndex++
+	}
+
+	if retryWarningIdx == -1 {
+		t.Fatalf("expected provider_retry warning event on stream")
+	}
+	if messageUpdateIdx == -1 {
+		t.Fatalf("expected message_update event on stream")
+	}
+	if retryWarningIdx > messageUpdateIdx {
+		t.Fatalf("expected retry warning before message update, got warning_idx=%d message_update_idx=%d", retryWarningIdx, messageUpdateIdx)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func containsSkipped(delta string) bool {
 	return delta == "tool_error: Skipped due to queued user message."
 }
