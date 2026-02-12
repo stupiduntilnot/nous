@@ -1,0 +1,4 @@
+{"v":"1","id":"cmd-live-1","type":"prompt","payload":{"text":"Investigate project and report status","wait":false}}
+{"v":"1","id":"cmd-live-2","type":"steer","payload":{"text":"Prioritize build failures first"}}
+{"v":"1","id":"cmd-live-3","type":"follow_up","payload":{"text":"After that, list top 3 risks"}}
+{"v":"1","id":"cmd-live-4","type":"abort","payload":{}}

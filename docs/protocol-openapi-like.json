@@ -21,8 +21,37 @@
     "branch_session": ["session_id"],
     "extension_command": ["name"]
   },
+  "x-command-payload-optional": {
+    "prompt": ["wait"],
+    "steer": [],
+    "follow_up": [],
+    "abort": []
+  },
+  "x-runtime-semantics": {
+    "prompt": {
+      "mode": "non_blocking_command",
+      "behavior": "command response returns immediately; run lifecycle is delivered on event stream",
+      "accepted_response": {
+        "type": "accepted",
+        "payload": {
+          "command": "prompt",
+          "run_id": "<run-id>"
+        }
+      },
+      "legacy_compatibility": "sync result envelope may remain temporarily during migration"
+    },
+    "mid_run_controls": {
+      "steer": "accepted during active run; injected with higher priority",
+      "follow_up": "accepted during active run; queued after current convergence point",
+      "abort": "accepted during active run; terminates run"
+    }
+  },
   "x-response-payload-requirements": {
     "pong": ["message"],
+    "accepted:prompt": ["command", "run_id"],
+    "accepted:steer": ["command"],
+    "accepted:follow_up": ["command"],
+    "accepted:abort": ["command"],
     "accepted:set_active_tools": ["command"],
     "result": ["output", "events", "session_id"],
     "session": ["session_id", "active"],

@@ -1,4 +1,8 @@
 {"v":"1","id":"cmd-1","type":"pong","payload":{"message":"pong"},"ok":true}
+{"v":"1","id":"cmd-2a","type":"accepted","payload":{"command":"prompt","run_id":"run-42"},"ok":true}
+{"v":"1","id":"cmd-3a","type":"accepted","payload":{"command":"steer"},"ok":true}
+{"v":"1","id":"cmd-4a","type":"accepted","payload":{"command":"follow_up"},"ok":true}
+{"v":"1","id":"cmd-10a","type":"accepted","payload":{"command":"abort"},"ok":true}
 {"v":"1","id":"cmd-2","type":"accepted","payload":{"command":"set_active_tools"},"ok":true}
 {"v":"1","id":"cmd-3","type":"session","payload":{"session_id":"sess-123","active":true},"ok":true}
 {"v":"1","id":"cmd-4","type":"result","payload":{"output":"hello","events":[],"session_id":"sess-123"},"ok":true}

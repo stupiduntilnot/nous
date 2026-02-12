@@ -11,36 +11,44 @@ import (
 func TestResponseExamplesCoveredByResponseRequirements(t *testing.T) {
 	reqs := loadResponseRequirementsForTest(t)
 
-	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-responses.ndjson"))
-	if err != nil {
-		t.Fatalf("open responses fixture failed: %v", err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	line := 0
-	for scanner.Scan() {
-		line++
-		var resp ResponseEnvelope
-		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
-			t.Fatalf("invalid response fixture line %d: %v", line, err)
-		}
-		if !resp.OK {
-			continue
+	for _, path := range []string{
+		"../../docs/example-protocol-responses.ndjson",
+		"../../docs/example-protocol-responses-live-run-control.ndjson",
+	} {
+		f, err := os.Open(filepath.FromSlash(path))
+		if err != nil {
+			t.Fatalf("open responses fixture failed: %v", err)
 		}
 
-		key := resp.Type
-		if resp.Type == "accepted" {
-			if cmd, _ := resp.Payload["command"].(string); cmd != "" {
-				key = resp.Type + ":" + cmd
+		scanner := bufio.NewScanner(f)
+		line := 0
+		for scanner.Scan() {
+			line++
+			var resp ResponseEnvelope
+			if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+				_ = f.Close()
+				t.Fatalf("invalid response fixture line %d in %s: %v", line, path, err)
+			}
+			if !resp.OK {
+				continue
+			}
+
+			key := resp.Type
+			if resp.Type == "accepted" {
+				if cmd, _ := resp.Payload["command"].(string); cmd != "" {
+					key = resp.Type + ":" + cmd
+				}
+			}
+			if _, ok := reqs[key]; !ok {
+				_ = f.Close()
+				t.Fatalf("response fixture line %d in %s has no response requirement key %q", line, path, key)
 			}
 		}
-		if _, ok := reqs[key]; !ok {
-			t.Fatalf("response fixture line %d has no response requirement key %q", line, key)
+		if err := scanner.Err(); err != nil {
+			_ = f.Close()
+			t.Fatalf("scan responses fixture failed for %s: %v", path, err)
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("scan responses fixture failed: %v", err)
+		_ = f.Close()
 	}
 }
 
@@ -48,31 +56,37 @@ func TestResponseRequirementsHaveSuccessExamples(t *testing.T) {
 	reqs := loadResponseRequirementsForTest(t)
 	seen := make(map[string]struct{}, len(reqs))
 
-	f, err := os.Open(filepath.FromSlash("../../docs/example-protocol-responses.ndjson"))
-	if err != nil {
-		t.Fatalf("open responses fixture failed: %v", err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var resp ResponseEnvelope
-		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
-			t.Fatalf("invalid response fixture line: %v", err)
+	for _, path := range []string{
+		"../../docs/example-protocol-responses.ndjson",
+		"../../docs/example-protocol-responses-live-run-control.ndjson",
+	} {
+		f, err := os.Open(filepath.FromSlash(path))
+		if err != nil {
+			t.Fatalf("open responses fixture failed: %v", err)
 		}
-		if !resp.OK {
-			continue
-		}
-		key := resp.Type
-		if resp.Type == "accepted" {
-			if cmd, _ := resp.Payload["command"].(string); cmd != "" {
-				key = resp.Type + ":" + cmd
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			var resp ResponseEnvelope
+			if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+				_ = f.Close()
+				t.Fatalf("invalid response fixture line in %s: %v", path, err)
 			}
+			if !resp.OK {
+				continue
+			}
+			key := resp.Type
+			if resp.Type == "accepted" {
+				if cmd, _ := resp.Payload["command"].(string); cmd != "" {
+					key = resp.Type + ":" + cmd
+				}
+			}
+			seen[key] = struct{}{}
 		}
-		seen[key] = struct{}{}
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("scan responses fixture failed: %v", err)
+		if err := scanner.Err(); err != nil {
+			_ = f.Close()
+			t.Fatalf("scan responses fixture failed for %s: %v", path, err)
+		}
+		_ = f.Close()
 	}
 
 	for key := range reqs {
