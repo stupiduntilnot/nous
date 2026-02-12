@@ -146,6 +146,35 @@ func TestEngineRunsRunLifecycleHooks(t *testing.T) {
 	}
 }
 
+func TestEngineRunsBeforeAgentStartAndTurnStartHooks(t *testing.T) {
+	r := NewRuntime()
+	e := NewEngine(r, provider.NewMockAdapter())
+
+	m := extension.NewManager()
+	beforeCalled := false
+	turnStartCalled := false
+	m.RegisterBeforeAgentStartHook(func(in extension.BeforeAgentStartHookInput) error {
+		if in.RunID == "run-ext-prestart" {
+			beforeCalled = true
+		}
+		return nil
+	})
+	m.RegisterTurnStartHook(func(in extension.TurnStartHookInput) error {
+		if in.RunID == "run-ext-prestart" && in.Turn == 1 {
+			turnStartCalled = true
+		}
+		return nil
+	})
+	e.SetExtensionManager(m)
+
+	if _, err := e.Prompt(context.Background(), "run-ext-prestart", "hello"); err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	if !beforeCalled || !turnStartCalled {
+		t.Fatalf("expected before_agent_start and turn_start hooks to run: before=%v turn_start=%v", beforeCalled, turnStartCalled)
+	}
+}
+
 func TestEngineIsolatesLifecycleHookErrorsAsWarnings(t *testing.T) {
 	r := NewRuntime()
 	e := NewEngine(r, provider.NewMockAdapter())

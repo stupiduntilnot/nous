@@ -37,6 +37,10 @@ func (e *Engine) SetExtensionManager(m *extension.Manager) {
 	e.ext = m
 }
 
+func (e *Engine) ExtensionManager() *extension.Manager {
+	return e.ext
+}
+
 func (e *Engine) SetTransformContext(fn TransformContextFn) {
 	e.transformContext = fn
 }
@@ -98,6 +102,9 @@ func (e *Engine) BeginRun(runID string) error {
 		return err
 	}
 	if e.ext != nil {
+		if err := e.ext.RunBeforeAgentStartHooks(runID); err != nil {
+			e.runtime.Warning("extension_hook_error", fmt.Sprintf("before_agent_start: %v", err))
+		}
 		if err := e.ext.RunRunStartHooks(runID); err != nil {
 			e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_start: %v", err))
 		}
@@ -154,6 +161,11 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 
 	if err := e.runtime.StartTurn(); err != nil {
 		return "", err
+	}
+	if e.ext != nil {
+		if err := e.ext.RunTurnStartHooks(runID, e.runtime.TurnNumber()); err != nil {
+			e.runtime.Warning("extension_hook_error", fmt.Sprintf("turn_start: %v", err))
+		}
 	}
 	defer func() {
 		_ = e.runtime.EndTurn()

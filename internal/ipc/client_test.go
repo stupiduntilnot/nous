@@ -1441,6 +1441,84 @@ func TestAsyncPromptUsesSessionContextAndPersistsRawInput(t *testing.T) {
 	}
 }
 
+func TestSessionPreHooksCanCancelSwitchAndBranch(t *testing.T) {
+	base := testWorkDir(t)
+	socket := filepath.Join(base, "core.sock")
+	srv := NewServer(socket)
+
+	mgr, err := session.NewManager(filepath.Join(base, "sessions"))
+	if err != nil {
+		t.Fatalf("new session manager failed: %v", err)
+	}
+	srv.SetSessionManager(mgr)
+
+	extMgr := extension.NewManager()
+	extMgr.RegisterSessionBeforeSwitchHook(func(in extension.SessionBeforeSwitchHookInput) (extension.SessionBeforeSwitchHookOutput, error) {
+		if in.Reason == "switch" {
+			return extension.SessionBeforeSwitchHookOutput{Cancel: true, Reason: "switch_blocked"}, nil
+		}
+		return extension.SessionBeforeSwitchHookOutput{}, nil
+	})
+	extMgr.RegisterSessionBeforeForkHook(func(in extension.SessionBeforeForkHookInput) (extension.SessionBeforeForkHookOutput, error) {
+		return extension.SessionBeforeForkHookOutput{Cancel: true, Reason: "fork_blocked"}, nil
+	})
+	e := core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	e.SetExtensionManager(extMgr)
+	srv.SetEngine(e, core.NewCommandLoop(e))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	s1, err := SendCommand(socket, protocol.Envelope{ID: "hook-s1", Type: string(protocol.CmdNewSession), Payload: map[string]any{}})
+	if err != nil || !s1.OK {
+		t.Fatalf("new session 1 failed: resp=%+v err=%v", s1, err)
+	}
+	s1ID, _ := s1.Payload["session_id"].(string)
+
+	s2, err := SendCommand(socket, protocol.Envelope{ID: "hook-s2", Type: string(protocol.CmdNewSession), Payload: map[string]any{}})
+	if err != nil || !s2.OK {
+		t.Fatalf("new session 2 failed: resp=%+v err=%v", s2, err)
+	}
+	s2ID, _ := s2.Payload["session_id"].(string)
+	if s1ID == "" || s2ID == "" || s1ID == s2ID {
+		t.Fatalf("unexpected session ids: s1=%q s2=%q", s1ID, s2ID)
+	}
+
+	switchResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "hook-switch",
+		Type:    string(protocol.CmdSwitchSession),
+		Payload: map[string]any{"session_id": s1ID},
+	})
+	if err != nil {
+		t.Fatalf("switch command failed: %v", err)
+	}
+	if switchResp.OK || switchResp.Error == nil || switchResp.Error.Code != "command_rejected" {
+		t.Fatalf("expected switch to be rejected by hook, got %+v", switchResp)
+	}
+
+	branchResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "hook-branch",
+		Type:    string(protocol.CmdBranchSession),
+		Payload: map[string]any{"session_id": s2ID},
+	})
+	if err != nil {
+		t.Fatalf("branch command failed: %v", err)
+	}
+	if branchResp.OK || branchResp.Error == nil || branchResp.Error.Code != "command_rejected" {
+		t.Fatalf("expected branch to be rejected by hook, got %+v", branchResp)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestSendCommandWithTimeoutDeadline(t *testing.T) {
 	socket := testSocketPath(t)
 	ln, err := net.Listen("unix", socket)

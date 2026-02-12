@@ -117,6 +117,66 @@ func TestRunStartAndRunEndHooksInvoked(t *testing.T) {
 	}
 }
 
+func TestBeforeAgentStartAndTurnStartHooksInvoked(t *testing.T) {
+	m := NewManager()
+	beforeCalled := false
+	turnStartCalled := false
+	m.RegisterBeforeAgentStartHook(func(in BeforeAgentStartHookInput) error {
+		if in.RunID == "run-2" {
+			beforeCalled = true
+		}
+		return nil
+	})
+	m.RegisterTurnStartHook(func(in TurnStartHookInput) error {
+		if in.RunID == "run-2" && in.Turn == 1 {
+			turnStartCalled = true
+		}
+		return nil
+	})
+
+	if err := m.RunBeforeAgentStartHooks("run-2"); err != nil {
+		t.Fatalf("before_agent_start hooks failed: %v", err)
+	}
+	if err := m.RunTurnStartHooks("run-2", 1); err != nil {
+		t.Fatalf("turn_start hooks failed: %v", err)
+	}
+	if !beforeCalled || !turnStartCalled {
+		t.Fatalf("expected before_agent_start and turn_start hooks to be invoked: before=%v turn_start=%v", beforeCalled, turnStartCalled)
+	}
+}
+
+func TestSessionBeforeHooksCanCancel(t *testing.T) {
+	m := NewManager()
+	m.RegisterSessionBeforeSwitchHook(func(in SessionBeforeSwitchHookInput) (SessionBeforeSwitchHookOutput, error) {
+		if in.Reason == "switch" {
+			return SessionBeforeSwitchHookOutput{Cancel: true, Reason: "switch_denied"}, nil
+		}
+		return SessionBeforeSwitchHookOutput{}, nil
+	})
+	m.RegisterSessionBeforeForkHook(func(in SessionBeforeForkHookInput) (SessionBeforeForkHookOutput, error) {
+		if in.ParentSessionID == "sess-parent" {
+			return SessionBeforeForkHookOutput{Cancel: true, Reason: "fork_denied"}, nil
+		}
+		return SessionBeforeForkHookOutput{}, nil
+	})
+
+	switchOut, err := m.RunSessionBeforeSwitchHooks("sess-a", "sess-b", "switch")
+	if err != nil {
+		t.Fatalf("session_before_switch hook failed: %v", err)
+	}
+	if !switchOut.Cancel || switchOut.Reason != "switch_denied" {
+		t.Fatalf("unexpected switch hook output: %+v", switchOut)
+	}
+
+	forkOut, err := m.RunSessionBeforeForkHooks("sess-parent")
+	if err != nil {
+		t.Fatalf("session_before_fork hook failed: %v", err)
+	}
+	if !forkOut.Cancel || forkOut.Reason != "fork_denied" {
+		t.Fatalf("unexpected fork hook output: %+v", forkOut)
+	}
+}
+
 func TestRegisterToolAndCommand(t *testing.T) {
 	m := NewManager()
 	if err := m.RegisterTool("echo", func(args map[string]any) (string, error) { return "ok", nil }); err != nil {

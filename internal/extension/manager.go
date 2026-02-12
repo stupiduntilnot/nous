@@ -45,9 +45,38 @@ type RunStartHookInput struct {
 	RunID string
 }
 
+type BeforeAgentStartHookInput struct {
+	RunID string
+}
+
 type RunEndHookInput struct {
 	RunID string
 	Turn  int
+}
+
+type TurnStartHookInput struct {
+	RunID string
+	Turn  int
+}
+
+type SessionBeforeSwitchHookInput struct {
+	CurrentSessionID string
+	TargetSessionID  string
+	Reason           string
+}
+
+type SessionBeforeSwitchHookOutput struct {
+	Cancel bool
+	Reason string
+}
+
+type SessionBeforeForkHookInput struct {
+	ParentSessionID string
+}
+
+type SessionBeforeForkHookOutput struct {
+	Cancel bool
+	Reason string
 }
 
 type InputHook func(InputHookInput) (InputHookOutput, error)
@@ -55,7 +84,11 @@ type ToolCallHook func(ToolCallHookInput) (ToolCallHookOutput, error)
 type ToolResultHook func(ToolResultHookInput) (ToolResultHookOutput, error)
 type TurnEndHook func(TurnEndHookInput) error
 type RunStartHook func(RunStartHookInput) error
+type BeforeAgentStartHook func(BeforeAgentStartHookInput) error
 type RunEndHook func(RunEndHookInput) error
+type TurnStartHook func(TurnStartHookInput) error
+type SessionBeforeSwitchHook func(SessionBeforeSwitchHookInput) (SessionBeforeSwitchHookOutput, error)
+type SessionBeforeForkHook func(SessionBeforeForkHookInput) (SessionBeforeForkHookOutput, error)
 
 type Manager struct {
 	mu sync.RWMutex
@@ -63,12 +96,16 @@ type Manager struct {
 	tools    map[string]ToolHandler
 	commands map[string]CommandHandler
 
-	inputHooks      []InputHook
-	toolCallHooks   []ToolCallHook
-	toolResultHooks []ToolResultHook
-	turnEndHooks    []TurnEndHook
-	runStartHooks   []RunStartHook
-	runEndHooks     []RunEndHook
+	inputHooks               []InputHook
+	toolCallHooks            []ToolCallHook
+	toolResultHooks          []ToolResultHook
+	turnEndHooks             []TurnEndHook
+	runStartHooks            []RunStartHook
+	beforeAgentStartHooks    []BeforeAgentStartHook
+	runEndHooks              []RunEndHook
+	turnStartHooks           []TurnStartHook
+	sessionBeforeSwitchHooks []SessionBeforeSwitchHook
+	sessionBeforeForkHooks   []SessionBeforeForkHook
 }
 
 func NewManager() *Manager {
@@ -159,10 +196,34 @@ func (m *Manager) RegisterRunStartHook(h RunStartHook) {
 	m.runStartHooks = append(m.runStartHooks, h)
 }
 
+func (m *Manager) RegisterBeforeAgentStartHook(h BeforeAgentStartHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.beforeAgentStartHooks = append(m.beforeAgentStartHooks, h)
+}
+
 func (m *Manager) RegisterRunEndHook(h RunEndHook) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.runEndHooks = append(m.runEndHooks, h)
+}
+
+func (m *Manager) RegisterTurnStartHook(h TurnStartHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.turnStartHooks = append(m.turnStartHooks, h)
+}
+
+func (m *Manager) RegisterSessionBeforeSwitchHook(h SessionBeforeSwitchHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionBeforeSwitchHooks = append(m.sessionBeforeSwitchHooks, h)
+}
+
+func (m *Manager) RegisterSessionBeforeForkHook(h SessionBeforeForkHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionBeforeForkHooks = append(m.sessionBeforeForkHooks, h)
 }
 
 func (m *Manager) RunInputHooks(text string) (InputHookOutput, error) {
@@ -251,6 +312,19 @@ func (m *Manager) RunRunStartHooks(runID string) error {
 	return nil
 }
 
+func (m *Manager) RunBeforeAgentStartHooks(runID string) error {
+	m.mu.RLock()
+	hooks := append([]BeforeAgentStartHook(nil), m.beforeAgentStartHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		if err := h(BeforeAgentStartHookInput{RunID: runID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *Manager) RunRunEndHooks(runID string, turn int) error {
 	m.mu.RLock()
 	hooks := append([]RunEndHook(nil), m.runEndHooks...)
@@ -262,4 +336,63 @@ func (m *Manager) RunRunEndHooks(runID string, turn int) error {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) RunTurnStartHooks(runID string, turn int) error {
+	m.mu.RLock()
+	hooks := append([]TurnStartHook(nil), m.turnStartHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		if err := h(TurnStartHookInput{RunID: runID, Turn: turn}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RunSessionBeforeSwitchHooks(currentSessionID, targetSessionID, reason string) (SessionBeforeSwitchHookOutput, error) {
+	m.mu.RLock()
+	hooks := append([]SessionBeforeSwitchHook(nil), m.sessionBeforeSwitchHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		out, err := h(SessionBeforeSwitchHookInput{
+			CurrentSessionID: currentSessionID,
+			TargetSessionID:  targetSessionID,
+			Reason:           reason,
+		})
+		if err != nil {
+			return SessionBeforeSwitchHookOutput{}, err
+		}
+		if out.Cancel {
+			if out.Reason == "" {
+				out.Reason = "cancelled_by_extension"
+			}
+			return out, nil
+		}
+	}
+	return SessionBeforeSwitchHookOutput{}, nil
+}
+
+func (m *Manager) RunSessionBeforeForkHooks(parentSessionID string) (SessionBeforeForkHookOutput, error) {
+	m.mu.RLock()
+	hooks := append([]SessionBeforeForkHook(nil), m.sessionBeforeForkHooks...)
+	m.mu.RUnlock()
+
+	for _, h := range hooks {
+		out, err := h(SessionBeforeForkHookInput{
+			ParentSessionID: parentSessionID,
+		})
+		if err != nil {
+			return SessionBeforeForkHookOutput{}, err
+		}
+		if out.Cancel {
+			if out.Reason == "" {
+				out.Reason = "cancelled_by_extension"
+			}
+			return out, nil
+		}
+	}
+	return SessionBeforeForkHookOutput{}, nil
 }

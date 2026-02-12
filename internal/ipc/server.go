@@ -251,6 +251,15 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 			Payload: map[string]any{"message": "pong"},
 		})
 	case protocol.CmdNewSession:
+		if ext := s.extensionManager(); ext != nil {
+			out, err := ext.RunSessionBeforeSwitchHooks(s.sessions.ActiveSession(), "", "new")
+			if err != nil {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			if out.Cancel {
+				return responseErr(env.ID, "command_rejected", out.Reason)
+			}
+		}
 		id, err := s.sessions.NewSession()
 		if err != nil {
 			return responseErr(env.ID, "session_error", err.Error())
@@ -268,6 +277,15 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		rawID, ok := env.Payload["session_id"].(string)
 		if !ok || rawID == "" {
 			return responseErr(env.ID, "invalid_payload", "session_id is required")
+		}
+		if ext := s.extensionManager(); ext != nil {
+			out, err := ext.RunSessionBeforeSwitchHooks(s.sessions.ActiveSession(), rawID, "switch")
+			if err != nil {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			if out.Cancel {
+				return responseErr(env.ID, "command_rejected", out.Reason)
+			}
 		}
 		if err := s.sessions.SwitchSession(rawID); err != nil {
 			return responseErr(env.ID, "session_not_found", err.Error())
@@ -288,6 +306,15 @@ func (s *Server) dispatch(env protocol.Envelope) protocol.ResponseEnvelope {
 		}
 		if rawParentID == "" {
 			return responseErr(env.ID, "invalid_payload", "session_id is required")
+		}
+		if ext := s.extensionManager(); ext != nil {
+			out, err := ext.RunSessionBeforeForkHooks(rawParentID)
+			if err != nil {
+				return responseErr(env.ID, "command_rejected", err.Error())
+			}
+			if out.Cancel {
+				return responseErr(env.ID, "command_rejected", out.Reason)
+			}
 		}
 		id, err := s.sessions.BranchFrom(rawParentID)
 		if err != nil {
@@ -681,6 +708,13 @@ func (s *Server) writeLog(ev core.LogEvent) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 	_ = core.WriteLogEvent(s.logWriter, ev)
+}
+
+func (s *Server) extensionManager() *extension.Manager {
+	if s.engine == nil {
+		return nil
+	}
+	return s.engine.ExtensionManager()
 }
 
 func (s *Server) setActiveRunSession(runID, sessionID string) {
