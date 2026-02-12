@@ -185,3 +185,37 @@ func TestExtractSessionID(t *testing.T) {
 		t.Fatalf("unexpected session id: %q", got)
 	}
 }
+
+func TestRunQueueStateLifecycle(t *testing.T) {
+	q := &runQueueState{}
+	q.Activate("run-1")
+
+	if snap, changed := q.MarkAccepted("steer", "run-1"); !changed || snap.PendingSteer != 1 || snap.PendingFollowUp != 0 {
+		t.Fatalf("unexpected steer queue state: changed=%v snap=%+v", changed, snap)
+	}
+	if snap, changed := q.MarkAccepted("follow_up", "run-1"); !changed || snap.PendingSteer != 1 || snap.PendingFollowUp != 1 {
+		t.Fatalf("unexpected follow_up queue state: changed=%v snap=%+v", changed, snap)
+	}
+
+	if snap, changed := q.MarkEvent("turn_start", "run-1"); !changed || snap.PendingSteer != 0 || snap.PendingFollowUp != 1 {
+		t.Fatalf("unexpected queue consumption after first turn: changed=%v snap=%+v", changed, snap)
+	}
+	if snap, changed := q.MarkEvent("turn_start", "run-1"); !changed || snap.PendingSteer != 0 || snap.PendingFollowUp != 0 {
+		t.Fatalf("unexpected queue consumption after second turn: changed=%v snap=%+v", changed, snap)
+	}
+	if snap, changed := q.MarkEvent("agent_end", "run-1"); !changed || snap.ActiveRunID != "" {
+		t.Fatalf("queue should reset at agent_end: changed=%v snap=%+v", changed, snap)
+	}
+}
+
+func TestRunQueueStateIgnoresMismatchedRun(t *testing.T) {
+	q := &runQueueState{}
+	q.Activate("run-1")
+
+	if _, changed := q.MarkAccepted("steer", "run-other"); changed {
+		t.Fatalf("expected mismatched run accepted command to be ignored")
+	}
+	if _, changed := q.MarkEvent("turn_start", "run-other"); changed {
+		t.Fatalf("expected mismatched run event to be ignored")
+	}
+}

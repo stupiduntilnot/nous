@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"nous/internal/ipc"
@@ -20,10 +21,12 @@ func main() {
 		socket = os.Args[1]
 	}
 	activeSession := ""
+	queue := &runQueueState{}
+	var runDone <-chan struct{}
 
 	fmt.Println("nous tui mvp")
 	fmt.Printf("socket: %s\n", socket)
-	printStatus(socket, activeSession)
+	printStatus(socket, activeSession, queue)
 	printHelp()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -44,6 +47,12 @@ func main() {
 			continue
 		}
 		if quit {
+			if runDone != nil {
+				select {
+				case <-runDone:
+				case <-time.After(3 * time.Second):
+				}
+			}
 			return
 		}
 		if cmd == "" {
@@ -52,11 +61,37 @@ func main() {
 				continue
 			}
 			if line == "status" {
-				printStatus(socket, activeSession)
+				printStatus(socket, activeSession, queue)
 				continue
 			}
 			fmt.Printf("unknown command: %s\n", line)
 			continue
+		}
+		if cmd == string(protocol.CmdPrompt) {
+			if runDone != nil && channelClosed(runDone) {
+				runDone = nil
+			}
+			if runDone == nil && queue.Snapshot().ActiveRunID == "" {
+				done := make(chan struct{})
+				runDone = done
+				go func() {
+					defer close(done)
+					if err := streamRunEvents(socket, "", func(env protocol.Envelope) {
+						evRunID, _ := env.Payload["run_id"].(string)
+						ev := make(map[string]any, len(env.Payload)+1)
+						ev["type"] = env.Type
+						for k, v := range env.Payload {
+							ev[k] = v
+						}
+						renderEvent(ev)
+						if snap, changed := queue.MarkEvent(env.Type, evRunID); changed {
+							printQueueSnapshot(snap)
+						}
+					}); err != nil {
+						fmt.Printf("event stream error: %v\n", err)
+					}
+				}()
+			}
 		}
 
 		resp, sendErr := ipc.SendCommand(socket, protocol.Envelope{
@@ -79,13 +114,15 @@ func main() {
 						fmt.Printf("ok: type=%s payload=%v\n", resp.Type, resp.Payload)
 						continue
 					}
-					if err := streamRunEvents(socket, runID); err != nil {
-						fmt.Printf("event stream error: %v\n", err)
-					}
-					if activeSession != "" {
-						fmt.Printf("session: %s\n", activeSession)
-					}
+					queue.Activate(runID)
+					printQueueSnapshot(queue.Snapshot())
 					continue
+				}
+				if cmdName, _ := resp.Payload["command"].(string); cmdName == "steer" || cmdName == "follow_up" {
+					runID, _ := resp.Payload["run_id"].(string)
+					if snap, changed := queue.MarkAccepted(cmdName, runID); changed {
+						printQueueSnapshot(snap)
+					}
 				}
 			}
 			if resp.Type == "result" {
@@ -255,7 +292,7 @@ func renderEvent(ev map[string]any) {
 	}
 }
 
-func streamRunEvents(socket, runID string) error {
+func streamRunEvents(socket, runID string, onEvent func(protocol.Envelope)) error {
 	conn, err := net.DialTimeout("unix", socket+".events", 500*time.Millisecond)
 	if err != nil {
 		return fmt.Errorf("connect event stream: %w", err)
@@ -263,6 +300,7 @@ func streamRunEvents(socket, runID string) error {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
+	targetRunID := runID
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		_ = conn.SetReadDeadline(time.Now().Add(400 * time.Millisecond))
@@ -281,23 +319,24 @@ func streamRunEvents(socket, runID string) error {
 			continue
 		}
 		evRunID, _ := env.Payload["run_id"].(string)
-		if evRunID != runID {
+		if evRunID == "" {
 			continue
 		}
-		ev := make(map[string]any, len(env.Payload)+1)
-		ev["type"] = env.Type
-		for k, v := range env.Payload {
-			ev[k] = v
+		if targetRunID == "" {
+			targetRunID = evRunID
 		}
-		renderEvent(ev)
+		if evRunID != targetRunID {
+			continue
+		}
+		onEvent(env)
 		if env.Type == string(protocol.EvAgentEnd) {
 			return nil
 		}
 	}
-	return fmt.Errorf("timed out waiting for run end: %s", runID)
+	return fmt.Errorf("timed out waiting for run end: %s", targetRunID)
 }
 
-func printStatus(socket, activeSession string) {
+func printStatus(socket, activeSession string, queue *runQueueState) {
 	if checkConnected(socket) {
 		fmt.Println("status: connected")
 	} else {
@@ -305,9 +344,11 @@ func printStatus(socket, activeSession string) {
 	}
 	if activeSession == "" {
 		fmt.Println("session: (none)")
+		printQueueSnapshot(queue.Snapshot())
 		return
 	}
 	fmt.Printf("session: %s\n", activeSession)
+	printQueueSnapshot(queue.Snapshot())
 }
 
 func checkConnected(socket string) bool {
@@ -325,4 +366,112 @@ func extractSessionID(payload map[string]any) string {
 	}
 	sid, _ := payload["session_id"].(string)
 	return sid
+}
+
+type runQueueSnapshot struct {
+	ActiveRunID     string
+	PendingSteer    int
+	PendingFollowUp int
+}
+
+type runQueueState struct {
+	mu              sync.Mutex
+	activeRunID     string
+	pendingSteer    int
+	pendingFollowUp int
+}
+
+func (q *runQueueState) Activate(runID string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.activeRunID = runID
+	q.pendingSteer = 0
+	q.pendingFollowUp = 0
+}
+
+func (q *runQueueState) Snapshot() runQueueSnapshot {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return runQueueSnapshot{
+		ActiveRunID:     q.activeRunID,
+		PendingSteer:    q.pendingSteer,
+		PendingFollowUp: q.pendingFollowUp,
+	}
+}
+
+func (q *runQueueState) MarkAccepted(command, runID string) (runQueueSnapshot, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if runID == "" || runID != q.activeRunID {
+		return runQueueSnapshot{}, false
+	}
+	switch command {
+	case "steer":
+		q.pendingSteer++
+	case "follow_up":
+		q.pendingFollowUp++
+	default:
+		return runQueueSnapshot{}, false
+	}
+	return runQueueSnapshot{
+		ActiveRunID:     q.activeRunID,
+		PendingSteer:    q.pendingSteer,
+		PendingFollowUp: q.pendingFollowUp,
+	}, true
+}
+
+func (q *runQueueState) MarkEvent(eventType, runID string) (runQueueSnapshot, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if runID == "" {
+		return runQueueSnapshot{}, false
+	}
+	changed := false
+	if q.activeRunID == "" && eventType == string(protocol.EvAgentStart) {
+		q.activeRunID = runID
+		changed = true
+	}
+	if runID != q.activeRunID {
+		return runQueueSnapshot{}, false
+	}
+	switch eventType {
+	case string(protocol.EvTurnStart):
+		if q.pendingSteer > 0 {
+			q.pendingSteer--
+			changed = true
+		} else if q.pendingFollowUp > 0 {
+			q.pendingFollowUp--
+			changed = true
+		}
+	case string(protocol.EvAgentEnd):
+		q.activeRunID = ""
+		q.pendingSteer = 0
+		q.pendingFollowUp = 0
+		changed = true
+	}
+	if !changed {
+		return runQueueSnapshot{}, false
+	}
+	return runQueueSnapshot{
+		ActiveRunID:     q.activeRunID,
+		PendingSteer:    q.pendingSteer,
+		PendingFollowUp: q.pendingFollowUp,
+	}, true
+}
+
+func printQueueSnapshot(s runQueueSnapshot) {
+	if s.ActiveRunID == "" {
+		fmt.Println("queue: idle")
+		return
+	}
+	fmt.Printf("queue: run=%s steer=%d follow_up=%d\n", s.ActiveRunID, s.PendingSteer, s.PendingFollowUp)
+}
+
+func channelClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
