@@ -18,6 +18,8 @@ func normalizeToolArguments(toolName string, args map[string]any) (map[string]an
 		return normalizeGrepArgs(args)
 	case "write":
 		return normalizeWriteArgs(args)
+	case "edit":
+		return normalizeEditArgs(args)
 	default:
 		return args, nil
 	}
@@ -130,6 +132,27 @@ func normalizeWriteArgs(args map[string]any) (map[string]any, error) {
 	return map[string]any{
 		"path":    path,
 		"content": content,
+	}, nil
+}
+
+func normalizeEditArgs(args map[string]any) (map[string]any, error) {
+	path := resolveStringArg(args,
+		"path", "file_path", "filePath", "filepath", "file", "target_path", "targetPath")
+	if path == "" {
+		return nil, fmt.Errorf("validation_failed: edit.path is required")
+	}
+	oldText, ok := resolveRequiredStringField(args, "oldText", "old_text")
+	if !ok {
+		return nil, fmt.Errorf("validation_failed: edit.oldText is required")
+	}
+	newText, ok := resolveRequiredStringField(args, "newText", "new_text")
+	if !ok {
+		return nil, fmt.Errorf("validation_failed: edit.newText is required")
+	}
+	return map[string]any{
+		"path":    path,
+		"oldText": oldText,
+		"newText": newText,
 	}, nil
 }
 

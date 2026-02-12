@@ -265,6 +265,27 @@ func buildOpenAITools(names []string) []map[string]any {
 				"required":             []string{"path", "content"},
 				"additionalProperties": true,
 			}
+		case "edit":
+			description = "Edit a file by replacing exact oldText with newText."
+			parameters = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Path to file to edit.",
+					},
+					"oldText": map[string]any{
+						"type":        "string",
+						"description": "Exact old text to replace.",
+					},
+					"newText": map[string]any{
+						"type":        "string",
+						"description": "Replacement text.",
+					},
+				},
+				"required":             []string{"path", "oldText", "newText"},
+				"additionalProperties": true,
+			}
 		}
 		tools = append(tools, map[string]any{
 			"type": "function",

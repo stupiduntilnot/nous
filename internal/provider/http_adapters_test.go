@@ -313,3 +313,56 @@ func TestOpenAIAdapterWriteToolSchemaRequiresPathAndContent(t *testing.T) {
 		t.Fatalf("unexpected events: %+v", evs)
 	}
 }
+
+func TestOpenAIAdapterEditToolSchemaRequiresPathOldNew(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+		rawTools, ok := req["tools"].([]any)
+		if !ok || len(rawTools) != 1 {
+			t.Fatalf("expected one tool in request, got: %#v", req["tools"])
+		}
+		editTool, ok := rawTools[0].(map[string]any)
+		if !ok {
+			t.Fatalf("tool payload must be object: %#v", rawTools[0])
+		}
+		fn, ok := editTool["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("function payload missing: %#v", editTool)
+		}
+		params, ok := fn["parameters"].(map[string]any)
+		if !ok {
+			t.Fatalf("parameters missing: %#v", fn)
+		}
+		required, ok := params["required"].([]any)
+		if !ok || len(required) != 3 || required[0] != "path" || required[1] != "oldText" || required[2] != "newText" {
+			t.Fatalf("expected required path+oldText+newText for edit schema, got: %#v", params["required"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	a, err := NewOpenAIAdapter("test-key", "gpt-test", srv.URL)
+	if err != nil {
+		t.Fatalf("new openai adapter failed: %v", err)
+	}
+	evs := collectEvents(a.Stream(context.Background(), Request{
+		Prompt:      "hi",
+		ActiveTools: []string{"edit"},
+	}))
+	if len(evs) < 3 || evs[1].Type != EventTextDelta {
+		t.Fatalf("unexpected events: %+v", evs)
+	}
+}

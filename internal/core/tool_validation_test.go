@@ -110,3 +110,35 @@ func TestNormalizeWriteArgsAllowsEmptyContent(t *testing.T) {
 		t.Fatalf("expected empty content, got: %#v", got["content"])
 	}
 }
+
+func TestNormalizeEditArgsAcceptsAliases(t *testing.T) {
+	got, err := normalizeToolArguments("edit", map[string]any{
+		"filePath": "a.txt",
+		"old_text": "before",
+		"new_text": "after",
+	})
+	if err != nil {
+		t.Fatalf("normalize edit args failed: %v", err)
+	}
+	if p, _ := got["path"].(string); p != "a.txt" {
+		t.Fatalf("unexpected path: %#v", got["path"])
+	}
+	if oldText, _ := got["oldText"].(string); oldText != "before" {
+		t.Fatalf("unexpected oldText: %#v", got["oldText"])
+	}
+	if newText, _ := got["newText"].(string); newText != "after" {
+		t.Fatalf("unexpected newText: %#v", got["newText"])
+	}
+}
+
+func TestNormalizeEditArgsRequiresFields(t *testing.T) {
+	if _, err := normalizeToolArguments("edit", map[string]any{"oldText": "x", "newText": "y"}); err == nil || err.Error() != "validation_failed: edit.path is required" {
+		t.Fatalf("unexpected error for missing path: %v", err)
+	}
+	if _, err := normalizeToolArguments("edit", map[string]any{"path": "a.txt", "newText": "y"}); err == nil || err.Error() != "validation_failed: edit.oldText is required" {
+		t.Fatalf("unexpected error for missing oldText: %v", err)
+	}
+	if _, err := normalizeToolArguments("edit", map[string]any{"path": "a.txt", "oldText": "x"}); err == nil || err.Error() != "validation_failed: edit.newText is required" {
+		t.Fatalf("unexpected error for missing newText: %v", err)
+	}
+}
