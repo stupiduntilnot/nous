@@ -1,4 +1,4 @@
-.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate milestone4-gate milestone5-gate start start-small start-medium start-large small medium large list-openai-models e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
+.PHONY: build test lint ci release-gate phase-gate milestone2-gate milestone3-gate milestone4-gate milestone5-gate milestone6-gate start start-small start-medium start-large small medium large list-openai-models e2e-pingpong e2e-smoke e2e-local e2e-session e2e-extension e2e-protocol-compat e2e-tui e2e-tui-evidence
 
 SOCKET ?= /tmp/nous-core.sock
 API_BASE ?= https://api.openai.com/v1
@@ -85,6 +85,9 @@ milestone4-gate:
 
 milestone5-gate:
 	./scripts/phase-gate-m5.sh
+
+milestone6-gate:
+	./scripts/phase-gate-m6.sh
 
 e2e-pingpong:
 	./scripts/pingpong.sh
