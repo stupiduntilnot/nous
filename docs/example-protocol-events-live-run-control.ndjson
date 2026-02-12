@@ -4,16 +4,17 @@
 {"v":"1","id":"evt-live-4","type":"message_end","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"user-1"}}
 {"v":"1","id":"evt-live-5","type":"message_start","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"assistant-1","role":"assistant"}}
 {"v":"1","id":"evt-live-6","type":"message_update","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"assistant-1","delta":"Planning..."}}
-{"v":"1","id":"evt-live-7","type":"tool_execution_start","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash"}}
-{"v":"1","id":"evt-live-8","type":"tool_execution_update","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash","delta":"running"}}
-{"v":"1","id":"evt-live-9","type":"status","payload":{"run_id":"run-live-1","turn_id":"1","message":"steer_queued"}}
-{"v":"1","id":"evt-live-10","type":"tool_execution_end","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash"}}
-{"v":"1","id":"evt-live-11","type":"message_end","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"assistant-1"}}
-{"v":"1","id":"evt-live-12","type":"turn_end","payload":{"run_id":"run-live-1","turn_id":"1"}}
-{"v":"1","id":"evt-live-13","type":"turn_start","payload":{"run_id":"run-live-1","turn_id":"2"}}
-{"v":"1","id":"evt-live-14","type":"message_start","payload":{"run_id":"run-live-1","turn_id":"2","message_id":"user-steer-1","role":"user"}}
-{"v":"1","id":"evt-live-15","type":"message_end","payload":{"run_id":"run-live-1","turn_id":"2","message_id":"user-steer-1"}}
-{"v":"1","id":"evt-live-16","type":"warning","payload":{"run_id":"run-live-1","turn_id":"2","code":"follow_up_queued","message":"follow_up message pending"}}
-{"v":"1","id":"evt-live-17","type":"status","payload":{"run_id":"run-live-1","turn_id":"2","message":"abort_requested"}}
-{"v":"1","id":"evt-live-18","type":"turn_end","payload":{"run_id":"run-live-1","turn_id":"2"}}
-{"v":"1","id":"evt-live-19","type":"agent_end","payload":{"run_id":"run-live-1"}}
+{"v":"1","id":"evt-live-7","type":"message_update","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"assistant-1","delta":"Thinking about file changes..."}}
+{"v":"1","id":"evt-live-8","type":"tool_execution_start","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash"}}
+{"v":"1","id":"evt-live-9","type":"tool_execution_update","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash","delta":"running"}}
+{"v":"1","id":"evt-live-10","type":"status","payload":{"run_id":"run-live-1","turn_id":"1","message":"steer_queued"}}
+{"v":"1","id":"evt-live-11","type":"tool_execution_end","payload":{"run_id":"run-live-1","turn_id":"1","tool_call_id":"tc-1","tool_name":"bash"}}
+{"v":"1","id":"evt-live-12","type":"message_end","payload":{"run_id":"run-live-1","turn_id":"1","message_id":"assistant-1"}}
+{"v":"1","id":"evt-live-13","type":"turn_end","payload":{"run_id":"run-live-1","turn_id":"1"}}
+{"v":"1","id":"evt-live-14","type":"turn_start","payload":{"run_id":"run-live-1","turn_id":"2"}}
+{"v":"1","id":"evt-live-15","type":"message_start","payload":{"run_id":"run-live-1","turn_id":"2","message_id":"user-steer-1","role":"user"}}
+{"v":"1","id":"evt-live-16","type":"message_end","payload":{"run_id":"run-live-1","turn_id":"2","message_id":"user-steer-1"}}
+{"v":"1","id":"evt-live-17","type":"warning","payload":{"run_id":"run-live-1","turn_id":"2","code":"follow_up_queued","message":"follow_up message pending"}}
+{"v":"1","id":"evt-live-18","type":"status","payload":{"run_id":"run-live-1","turn_id":"2","message":"abort_requested"}}
+{"v":"1","id":"evt-live-19","type":"turn_end","payload":{"run_id":"run-live-1","turn_id":"2"}}
+{"v":"1","id":"evt-live-20","type":"agent_end","payload":{"run_id":"run-live-1"}}

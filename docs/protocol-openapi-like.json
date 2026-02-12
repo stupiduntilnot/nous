@@ -42,6 +42,7 @@
     "prompt": {
       "mode": "non_blocking_command",
       "behavior": "command response returns immediately; run lifecycle is delivered on event stream",
+      "streaming_message_contract": "assistant output may arrive as multiple message_update deltas before message_end",
       "accepted_response": {
         "type": "accepted",
         "payload": {

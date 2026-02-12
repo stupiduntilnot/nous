@@ -48,7 +48,9 @@ Lifecycle invariants:
 1. One logical run emits one `agent_start` and one `agent_end`.
 2. One run may contain multiple turns (`turn_start`/`turn_end`) due to queued steer/follow-up.
 3. Message stream uses `message_start` -> `message_update` -> `message_end`.
-4. Tool stream uses `tool_execution_start` -> `tool_execution_update` -> `tool_execution_end`.
+4. One assistant message may emit many `message_update` deltas before `message_end`; clients must append deltas in order.
+5. `message_end`/`turn_end` are finalization boundaries; do not treat any single `message_update` as complete output.
+6. Tool stream uses `tool_execution_start` -> `tool_execution_update` -> `tool_execution_end`.
 
 Queue/runtime semantics:
 1. `steer` has priority over `follow_up` for next turn dequeue.
