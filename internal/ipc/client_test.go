@@ -15,8 +15,8 @@ import (
 
 	"nous/internal/core"
 	"nous/internal/extension"
-	"nous/internal/provider"
 	"nous/internal/protocol"
+	"nous/internal/provider"
 	"nous/internal/session"
 )
 
@@ -1014,6 +1014,173 @@ func TestCommandTimeoutReturnsStandardError(t *testing.T) {
 	}
 }
 
+func TestAsyncPromptRunControlAcceptsSteerFollowUpAbort(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	exec := newOrderedExecutor()
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(exec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-ctrl-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil {
+		t.Fatalf("prompt wait=false failed: %v", err)
+	}
+	if !promptResp.OK || promptResp.Type != "accepted" {
+		t.Fatalf("unexpected prompt response: %+v", promptResp)
+	}
+	if got, _ := promptResp.Payload["command"].(string); got != "prompt" {
+		t.Fatalf("unexpected prompt accepted payload: %+v", promptResp.Payload)
+	}
+	if runID, _ := promptResp.Payload["run_id"].(string); runID == "" {
+		t.Fatalf("missing run_id in prompt accepted payload: %+v", promptResp.Payload)
+	}
+
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("prompt turn did not start")
+	}
+
+	steerResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-ctrl-steer",
+		Type:    string(protocol.CmdSteer),
+		Payload: map[string]any{"text": "s1"},
+	})
+	if err != nil {
+		t.Fatalf("steer failed: %v", err)
+	}
+	if !steerResp.OK || steerResp.Type != "accepted" {
+		t.Fatalf("unexpected steer response: %+v", steerResp)
+	}
+
+	followResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-ctrl-follow",
+		Type:    string(protocol.CmdFollowUp),
+		Payload: map[string]any{"text": "f1"},
+	})
+	if err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	if !followResp.OK || followResp.Type != "accepted" {
+		t.Fatalf("unexpected follow_up response: %+v", followResp)
+	}
+
+	abortResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-ctrl-abort",
+		Type:    string(protocol.CmdAbort),
+		Payload: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("abort failed: %v", err)
+	}
+	if !abortResp.OK || abortResp.Type != "accepted" {
+		t.Fatalf("unexpected abort response: %+v", abortResp)
+	}
+
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+	if got := exec.Calls(); len(got) != 1 || got[0] != "p0" {
+		t.Fatalf("abort should prevent queued turns from executing: %v", got)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
+func TestAsyncPromptRunControlSteerPreemptsFollowUpOverIPC(t *testing.T) {
+	socket := testSocketPath(t)
+	srv := NewServer(socket)
+
+	exec := newOrderedExecutor()
+	srv.engine = core.NewEngine(core.NewRuntime(), provider.NewMockAdapter())
+	srv.loop = core.NewCommandLoop(exec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	if err := waitForSocket(socket, 2*time.Second); err != nil {
+		t.Fatalf("server not ready: %v", err)
+	}
+
+	promptResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-order-prompt",
+		Type:    string(protocol.CmdPrompt),
+		Payload: map[string]any{"text": "p0", "wait": false},
+	})
+	if err != nil {
+		t.Fatalf("prompt wait=false failed: %v", err)
+	}
+	if !promptResp.OK || promptResp.Type != "accepted" {
+		t.Fatalf("unexpected prompt response: %+v", promptResp)
+	}
+
+	select {
+	case <-exec.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("prompt turn did not start")
+	}
+
+	followResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-order-follow",
+		Type:    string(protocol.CmdFollowUp),
+		Payload: map[string]any{"text": "f1"},
+	})
+	if err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	if !followResp.OK {
+		t.Fatalf("expected follow_up accepted, got: %+v", followResp)
+	}
+
+	steerResp, err := SendCommand(socket, protocol.Envelope{
+		ID:      "async-order-steer",
+		Type:    string(protocol.CmdSteer),
+		Payload: map[string]any{"text": "s1"},
+	})
+	if err != nil {
+		t.Fatalf("steer failed: %v", err)
+	}
+	if !steerResp.OK {
+		t.Fatalf("expected steer accepted, got: %+v", steerResp)
+	}
+
+	for range 8 {
+		exec.release <- struct{}{}
+	}
+	waitForLoopState(t, srv.loop, core.StateIdle, 2*time.Second)
+
+	got := exec.Calls()
+	want := []string{"p0", "s1", "f1"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected run control call count: got=%d want=%d calls=%v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected run control order at %d: got=%q want=%q all=%v", i, got[i], want[i], got)
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server returned error: %v", err)
+	}
+}
+
 func TestSendCommandWithTimeoutDeadline(t *testing.T) {
 	socket := testSocketPath(t)
 	ln, err := net.Listen("unix", socket)
@@ -1097,6 +1264,18 @@ func waitForSocket(socket string, timeout time.Duration) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return context.DeadlineExceeded
+}
+
+func waitForLoopState(t *testing.T, loop *core.CommandLoop, want core.RunState, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if loop.State() == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("loop did not reach state %q", want)
 }
 
 func testSocketPath(t *testing.T) string {
