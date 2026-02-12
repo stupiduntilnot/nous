@@ -161,6 +161,48 @@ func TestRenderResultRendersMessageUpdatesAsAssistant(t *testing.T) {
 	}
 }
 
+func TestRenderResultRendersProgressFieldsForRunTurnTool(t *testing.T) {
+	payload := map[string]any{
+		"events": []any{
+			map[string]any{"type": "agent_start", "run_id": "run-1"},
+			map[string]any{"type": "turn_start", "run_id": "run-1", "turn_id": "1"},
+			map[string]any{"type": "tool_execution_start", "run_id": "run-1", "turn_id": "1", "tool_name": "bash"},
+			map[string]any{"type": "tool_execution_update", "run_id": "run-1", "turn_id": "1", "tool_name": "bash", "delta": "running"},
+			map[string]any{"type": "tool_execution_end", "run_id": "run-1", "turn_id": "1", "tool_name": "bash"},
+			map[string]any{"type": "turn_end", "run_id": "run-1", "turn_id": "1"},
+			map[string]any{"type": "agent_end", "run_id": "run-1"},
+		},
+	}
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	os.Stdout = w
+	renderResult(payload)
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout failed: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"status: agent_start run=run-1",
+		"status: turn_start run=run-1 turn=1",
+		"tool: tool_execution_start name=bash run=run-1 turn=1",
+		"tool: tool_execution_update name=bash run=run-1 turn=1 delta=running",
+		"tool: tool_execution_end name=bash run=run-1 turn=1",
+		"status: agent_end run=run-1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("render output missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 func TestParseInputBranchUsesSessionID(t *testing.T) {
 	_, payload, _, err := parseInput("branch sess-1")
 	if err != nil {

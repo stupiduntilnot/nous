@@ -32,12 +32,22 @@ if [[ ! -S "$SOCKET" ]]; then
   exit 1
 fi
 
-OUT=$(printf 'ping\nprompt hello-from-evidence\nstatus\nquit\n' | go run ./cmd/tui "$SOCKET")
+OUT=$({
+  echo "ping"
+  echo "prompt hello-from-evidence"
+  sleep 0.05
+  echo "steer focus-on-summary"
+  sleep 0.05
+  echo "follow_up add-one-line"
+  sleep 0.05
+  echo "status"
+  echo "quit"
+} | go run ./cmd/tui "$SOCKET")
 {
   echo "# TUI Evidence"
   echo "timestamp: $STAMP"
   echo "socket: $SOCKET"
-  echo "commands: ping | prompt hello-from-evidence | status | quit"
+  echo "commands: ping | prompt hello-from-evidence | steer focus-on-summary | follow_up add-one-line | status | quit"
   echo "---"
   printf '%s\n' "$OUT"
 } | tee "$OUT_FILE" >/dev/null
@@ -46,5 +56,7 @@ echo "$OUT" | rg -q 'status: connected' || { echo "tui evidence missing connecte
 echo "$OUT" | rg -q 'ok: type=pong' || { echo "tui evidence missing pong" >&2; exit 1; }
 echo "$OUT" | rg -q 'assistant:' || { echo "tui evidence missing assistant output" >&2; exit 1; }
 echo "$OUT" | rg -q 'session: sess-' || { echo "tui evidence missing active session" >&2; exit 1; }
+echo "$OUT" | rg -q 'queue:' || { echo "tui evidence missing queue visibility" >&2; exit 1; }
+echo "$OUT" | rg -q 'status: turn_start run=' || { echo "tui evidence missing turn progress status" >&2; exit 1; }
 
 echo "tui evidence saved: $OUT_FILE"

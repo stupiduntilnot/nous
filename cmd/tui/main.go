@@ -259,14 +259,26 @@ func renderResult(payload map[string]any) {
 
 func renderEvent(ev map[string]any) {
 	tp, _ := ev["type"].(string)
+	runID, _ := ev["run_id"].(string)
+	turnID, _ := ev["turn_id"].(string)
+	toolName, _ := ev["tool_name"].(string)
 	switch tp {
 	case "message_update":
 		if delta, ok := ev["delta"].(string); ok && delta != "" {
 			fmt.Printf("assistant: %s\n", delta)
 		}
 	case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-		fmt.Printf("tool: %s %v\n", tp, ev)
+		delta, _ := ev["delta"].(string)
+		if delta != "" {
+			fmt.Printf("tool: %s name=%s run=%s turn=%s delta=%s\n", tp, toolName, runID, turnID, delta)
+			break
+		}
+		fmt.Printf("tool: %s name=%s run=%s turn=%s\n", tp, toolName, runID, turnID)
 	case "agent_start", "agent_end", "turn_start", "turn_end":
+		if runID != "" || turnID != "" {
+			fmt.Printf("status: %s run=%s turn=%s\n", tp, runID, turnID)
+			break
+		}
 		fmt.Printf("status: %s\n", tp)
 	case "status":
 		if msg, ok := ev["message"].(string); ok && msg != "" {
