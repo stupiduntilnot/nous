@@ -56,6 +56,46 @@ func waitLoopIdle(t *testing.T, loop *CommandLoop) {
 	t.Fatalf("loop did not return to idle")
 }
 
+type coordinatedExecutor struct {
+	gated *gatedExecutor
+
+	mu       sync.Mutex
+	begins   []string
+	ends     []string
+	beginErr error
+}
+
+func newCoordinatedExecutor() *coordinatedExecutor {
+	return &coordinatedExecutor{gated: newGatedExecutor()}
+}
+
+func (c *coordinatedExecutor) Prompt(ctx context.Context, runID, prompt string) (string, error) {
+	return c.gated.Prompt(ctx, runID, prompt)
+}
+
+func (c *coordinatedExecutor) BeginRun(runID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.beginErr != nil {
+		return c.beginErr
+	}
+	c.begins = append(c.begins, runID)
+	return nil
+}
+
+func (c *coordinatedExecutor) EndRun(runID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ends = append(c.ends, runID)
+	return nil
+}
+
+func (c *coordinatedExecutor) beginsAndEnds() ([]string, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.begins), slices.Clone(c.ends)
+}
+
 func TestCommandLoopSteerPreemptsFollowUps(t *testing.T) {
 	exec := newGatedExecutor()
 	loop := NewCommandLoop(exec)
@@ -96,6 +136,40 @@ func TestCommandLoopSteerPreemptsFollowUps(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("unexpected call order at %d: got=%s want=%s all=%v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestCommandLoopCoordinatesSingleRunLifecycleAcrossQueuedTurns(t *testing.T) {
+	exec := newCoordinatedExecutor()
+	loop := NewCommandLoop(exec)
+
+	runID, err := loop.Prompt("p0")
+	if err != nil {
+		t.Fatalf("prompt failed: %v", err)
+	}
+	select {
+	case <-exec.gated.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("first prompt did not start")
+	}
+	if err := loop.FollowUp("f1"); err != nil {
+		t.Fatalf("follow_up failed: %v", err)
+	}
+	exec.gated.release <- struct{}{}
+	exec.gated.release <- struct{}{}
+
+	waitLoopIdle(t, loop)
+	calls := exec.gated.Calls()
+	if !slices.Equal(calls, []string{"p0", "f1"}) {
+		t.Fatalf("unexpected turns: %v", calls)
+	}
+
+	begins, ends := exec.beginsAndEnds()
+	if len(begins) != 1 || begins[0] != runID {
+		t.Fatalf("unexpected begin lifecycle calls: run_id=%q begins=%v", runID, begins)
+	}
+	if len(ends) != 1 || ends[0] != runID {
+		t.Fatalf("unexpected end lifecycle calls: run_id=%q ends=%v", runID, ends)
 	}
 }
 

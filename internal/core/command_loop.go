@@ -10,6 +10,11 @@ type TurnExecutor interface {
 	Prompt(ctx context.Context, runID, prompt string) (string, error)
 }
 
+type RunCoordinator interface {
+	BeginRun(runID string) error
+	EndRun(runID string) error
+}
+
 type TurnKind string
 
 const (
@@ -138,6 +143,29 @@ func (l *CommandLoop) Abort() error {
 }
 
 func (l *CommandLoop) process(next queuedTurn) {
+	l.mu.Lock()
+	runID := l.runID
+	onTurnEnd := l.onTurnEnd
+	l.mu.Unlock()
+
+	if coordinator, ok := l.executor.(RunCoordinator); ok {
+		if err := coordinator.BeginRun(runID); err != nil {
+			if onTurnEnd != nil {
+				onTurnEnd(TurnResult{
+					RunID: runID,
+					Kind:  next.kind,
+					Input: next.text,
+					Err:   err,
+				})
+			}
+			l.mu.Lock()
+			l.finishLocked()
+			l.mu.Unlock()
+			return
+		}
+		defer func() { _ = coordinator.EndRun(runID) }()
+	}
+
 	for {
 		l.mu.Lock()
 		if l.state == StateAborting {
@@ -145,8 +173,6 @@ func (l *CommandLoop) process(next queuedTurn) {
 			l.mu.Unlock()
 			return
 		}
-		runID := l.runID
-		onTurnEnd := l.onTurnEnd
 		ctx, cancel := context.WithCancel(context.Background())
 		l.currentCancel = cancel
 		l.mu.Unlock()

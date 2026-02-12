@@ -79,6 +79,33 @@ func (e *Engine) activeToolNames() []string {
 	return out
 }
 
+func (e *Engine) BeginRun(runID string) error {
+	if err := e.runtime.StartRun(runID); err != nil {
+		return err
+	}
+	if e.ext != nil {
+		if err := e.ext.RunRunStartHooks(runID); err != nil {
+			e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_start: %v", err))
+		}
+	}
+	return nil
+}
+
+func (e *Engine) EndRun(runID string) error {
+	if state := e.runtime.State(); state != StateRunning && state != StateAborting {
+		return fmt.Errorf("run_not_active")
+	}
+	if active := e.runtime.RunID(); active != runID {
+		return fmt.Errorf("run_id_mismatch: active=%s requested=%s", active, runID)
+	}
+	if e.ext != nil {
+		if err := e.ext.RunRunEndHooks(runID, e.runtime.TurnNumber()); err != nil {
+			e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_end: %v", err))
+		}
+	}
+	return e.runtime.EndRun()
+}
+
 func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, error) {
 	if e.ext != nil {
 		out, err := e.ext.RunInputHooks(prompt)
@@ -91,21 +118,24 @@ func (e *Engine) Prompt(ctx context.Context, runID, prompt string) (string, erro
 		}
 	}
 
-	if err := e.runtime.StartRun(runID); err != nil {
-		return "", err
-	}
-	if e.ext != nil {
-		if err := e.ext.RunRunStartHooks(runID); err != nil {
-			e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_start: %v", err))
+	managedRun := false
+	switch e.runtime.State() {
+	case StateIdle:
+		if err := e.BeginRun(runID); err != nil {
+			return "", err
 		}
+		managedRun = true
+	case StateRunning, StateAborting:
+		if active := e.runtime.RunID(); active != runID {
+			return "", fmt.Errorf("run_id_mismatch: active=%s requested=%s", active, runID)
+		}
+	default:
+		return "", fmt.Errorf("invalid_runtime_state: %s", e.runtime.State())
 	}
 	defer func() {
-		if e.ext != nil {
-			if err := e.ext.RunRunEndHooks(runID, e.runtime.TurnNumber()); err != nil {
-				e.runtime.Warning("extension_hook_error", fmt.Sprintf("run_end: %v", err))
-			}
+		if managedRun {
+			_ = e.EndRun(runID)
 		}
-		_ = e.runtime.EndRun()
 	}()
 
 	if err := e.runtime.StartTurn(); err != nil {
