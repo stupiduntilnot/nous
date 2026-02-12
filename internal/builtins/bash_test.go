@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -41,8 +42,33 @@ func TestBashToolTimeout(t *testing.T) {
 	if _, err := tool.Execute(ctx, map[string]any{
 		"command": "sleep 2",
 		"timeout": 1,
-	}); err == nil || err.Error() != "bash_timeout" {
-		t.Fatalf("expected bash_timeout, got: %v", err)
+	}); err == nil || !strings.Contains(err.Error(), "Command timed out after 1 seconds") {
+		t.Fatalf("expected timeout message, got: %v", err)
+	}
+}
+
+func TestBashToolTruncatesOutputAndWritesTempFile(t *testing.T) {
+	tool := NewBashTool(t.TempDir())
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"command": "for i in {1..2200}; do printf \"line-%s\\n\" \"$i\"; done",
+	})
+	if err != nil {
+		t.Fatalf("bash execute failed: %v", err)
+	}
+	if !strings.Contains(out, "line-2200") {
+		t.Fatalf("expected tail output, got: %q", out)
+	}
+	if !strings.Contains(out, "[Showing lines ") || !strings.Contains(out, "Full output: ") || !strings.Contains(out, "pi-bash-") {
+		t.Fatalf("expected truncation notice with full output path, got: %q", out)
+	}
+	start := strings.LastIndex(out, "Full output: ")
+	if start == -1 {
+		t.Fatalf("missing full output path in: %q", out)
+	}
+	path := strings.TrimSuffix(out[start+len("Full output: "):], "]")
+	path = strings.TrimSpace(path)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected temp file to exist at %q: %v", path, err)
 	}
 }
 

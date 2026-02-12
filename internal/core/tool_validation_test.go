@@ -154,7 +154,7 @@ func TestNormalizeBashArgsAcceptsAliases(t *testing.T) {
 	if c, _ := got["command"].(string); c != "printf OK" {
 		t.Fatalf("unexpected command: %#v", got["command"])
 	}
-	if timeout, _ := got["timeout"].(int); timeout != 3 {
+	if timeout, _ := got["timeout"].(float64); timeout != 3 {
 		t.Fatalf("unexpected timeout: %#v", got["timeout"])
 	}
 }

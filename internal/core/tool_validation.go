@@ -164,7 +164,7 @@ func normalizeBashArgs(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("validation_failed: bash.command is required")
 	}
 	out := map[string]any{"command": command}
-	if n, ok, err := resolveIntArg(args, []string{"timeout", "timeout_seconds", "timeoutSeconds"}); err != nil {
+	if n, ok, err := resolveFloatArg(args, []string{"timeout", "timeout_seconds", "timeoutSeconds"}); err != nil {
 		return nil, fmt.Errorf("validation_failed: bash.timeout must be a number")
 	} else if ok {
 		if n < 0 {
@@ -252,6 +252,21 @@ func resolveBoolArg(args map[string]any, keys []string) (bool, bool, error) {
 	return false, false, nil
 }
 
+func resolveFloatArg(args map[string]any, keys []string) (float64, bool, error) {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		n, err := toFloat(v)
+		if err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	}
+	return 0, false, nil
+}
+
 func toInt(v any) (int, error) {
 	switch n := v.(type) {
 	case int:
@@ -277,6 +292,29 @@ func toInt(v any) (int, error) {
 			return 0, err
 		}
 		return int(f), nil
+	default:
+		return 0, fmt.Errorf("not_number")
+	}
+}
+
+func toFloat(v any) (float64, error) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), nil
+	case int32:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
+	case string:
+		s := strings.TrimSpace(n)
+		if s == "" {
+			return 0, fmt.Errorf("empty_number")
+		}
+		return strconv.ParseFloat(s, 64)
 	default:
 		return 0, fmt.Errorf("not_number")
 	}
